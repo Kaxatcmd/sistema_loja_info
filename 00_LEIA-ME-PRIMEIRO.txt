@@ -1,0 +1,226 @@
+⌂ LEIAME PRIMEIRA - SISTEMA DE LOJA DE INFORMÁTICA v2.0
+===========================================================
+
+Data: 27 de fevereiro de 2026
+Versão: 2.0 (Interface com Abas)
+Status: ✔ Sistema Completo e Funcional
+
+---
+
+🎯 GRANDE MUDANÇA NA v2.0: INTERFACE COM ABAS
+==============================================
+
+A versão 2.0 introduz uma mudança ARQUITETURAL importante:
+
+▸ ANTES (v1.0): Cada funcionalidade abria em uma janela separada (Toplevel)
+▸ AGORA (v2.0): Tudo usa ABAS em uma única janela (ttk.Notebook)
+
+Benefícios:
+✔ Interface mais organizada e profissional
+✔ Melhor experiência do utilizador
+✔ Sem janelas sobrepondo-se umas às outras
+✔ Navegação mais intuitiva
+✔ Estética minimalista com ícones Unicode
+
+---
+
+🚀 INÍCIO RÁPIDO (3 PASSOS)
+===========================
+
+1) ATIVAR AMBIENTE VIRTUAL:
+   $ source venv/bin/activate
+
+2) CONFIGURAR BASE DE DADOS:
+   $ python3 setup_database_v2.py
+
+3) EXECUTAR APLICAÇÃO:
+   $ python3 sistema_loja_tkinter.py
+
+👁️  Login com as credenciais de teste (ver abaixo)
+
+---
+
+🔐 CREDENCIAIS DE TESTE
+=======================
+
+CLIENTE NORMAL:
+- Email: cliente@example.com
+- Password: user123
+
+ADMINISTRADOR:
+- Email: joao@example.com
+- Password: user123
+
+---
+
+📊 NOVA INTERFACE - ABAS
+
+PARA CLIENTES:
+┌────────────────────────────────┐
+│ ◦ Nome do Cliente  ◆ Logout   │
+├────────────────────────────────┤
+│ [▸ Explorar] [▪ Carrinho]  ← ABAS
+│                              
+│ ABA 1 - Explorar Produtos:   
+│ • Listagem de produtos        
+│ • Adicionar ao carrinho       
+│                              
+│ ABA 2 - Ver Carrinho:        
+│ • Items do carrinho          
+│ • Total a pagar              
+│ • Finalizar compra           
+└────────────────────────────────┘
+
+PARA ADMINISTRADOR:
+┌────────────────────────────────────────┐
+│ ▲ Admin        ◆ Logout              │
+├────────────────────────────────────────┤
+│ [▬ Produtos] [◩ Clientes] [▣ Vendas] ← ABAS
+│                                        
+│ ABA 1 - Gerir Produtos:              
+│ • Listar todos os produtos           
+│ • ID, nome, preço, stock             
+│                                        
+│ ABA 2 - Gerir Clientes:               
+│ • Listar todos os clientes           
+│ • Email, status de admin              
+│                                        
+│ ABA 3 - Ver Vendas:                  
+│ • Histórico das últimas 50 vendas     
+│ • Cliente, data, total               
+└────────────────────────────────────────┘
+
+---
+
+🎨 ÍCONES MINIMALISTA (Unicode)
+===============================
+
+Sistema completo de PRETO E BRANCO sem parecer infantil:
+
+Estrutura & Geral:
+  ⌂  = Sistema de Loja
+  ▣  = Estatísticas
+  ✔  = Sucesso
+  ✘  = Erro
+
+Utilizadores:
+  ◦  = Utilizador Normal
+  ▲  = Administrador
+  ◆  = Segurança/Logout
+
+Funcionalidades:
+  ▸  = Explorar
+  ▪  = Carrinho
+  ▬  = Produtos
+  ◩  = Clientes
+  ⊕  = Adicionar
+  ★  = Recarregar
+
+---
+
+⚙️ FUNCIONALIDADES
+==================
+
+CLIENTE NORMAL:
+✔ Login com email e password
+✔ Explorar produtos disponíveis (em aba)
+✔ Adicionar produtos ao carrinho
+✔ Ver carrinho com cálculo de total (em outra aba)
+✔ Finalizar compra
+✔ Logout
+
+ADMINISTRADOR:
+✔ Tudo que o cliente faz
+✔ Gerir Produtos (ver catálogo - em aba)
+✔ Gerir Clientes (listar utilizadores - em aba)
+✔ Ver Vendas (histórico de transações - em aba)
+✔ Recarregar dados em tempo real
+
+---
+
+📁 ESTRUTURA DO PROJETO
+=======================
+
+Eng_Soft/
+├── sistema_loja_tkinter.py       ⭐ APLICAÇÃO PRINCIPAL (com abas!)
+├── setup_database_v2.py          ← Configuração BD
+├── setup_database.py             ← Configuração BD (legacy)
+├── admin_loja.py                 ← Ferramentas admin
+├── requirements.txt              ← Dependências
+│
+├── DOCUMENTAÇÃO:
+├── README_LOJA.md                ← Doc completa
+├── ARQUITETURA.md                ← Detalhes técnicos
+├── CONFIGURACAO.md               ← Referência rápida
+├── GUIA_TKINTER.md               ← Interface Tkinter
+├── NOVO_ESTILO_ICONES.md         ← Sistema de ícones
+│
+└── (outros arquivos de suporte)
+
+---
+
+🔧 REQUISITOS TÉCNICOS
+======================
+
+✓ Python 3.8+
+✓ Tkinter (incluído no Python)
+✓ MariaDB/MySQL (servidor local ou remoto)
+✓ Bibliotecas Python:
+  - mysql-connector-python
+  - bcrypt
+
+---
+
+📚 DOCUMENTAÇÃO PRINCIPAL
+=========================
+
+Leia nesta ordem:
+
+1. 00_LEIA-ME-PRIMEIRO.txt ← ESTÁ A LER AGORA
+2. README_LOJA.md          ← Documentação completa
+3. ARQUITETURA.md          ← Como está organizado
+4. CONFIGURACAO.md         ← Como configurar
+5. GUIA_TKINTER.md         ← Detalhes da interface
+
+---
+
+🐛 SE TIVER PROBLEMAS
+====================
+
+1. Certifique-se de que MariaDB está em execução
+   $ sudo service mysql start
+
+2. Verifique as credenciais de BD em DatabaseManager
+   
+3. Execute setup:
+   $ python3 setup_database_v2.py
+
+4. Procure mensagens de erro na consola
+
+---
+
+📈 O QUE MUDOU DA v1.0 PARA v2.0
+================================
+
+✔ Interface: Múltiplas janelas → Abas únicas
+✔ Organização: Janelas ao acaso → Abas ordenadas
+✔ UX: Confuso → Intuitivo
+✔ Profissionalismo: Infantil → Corporativo
+✔ Ícones: Emojis coloridos → Unicode minimalista
+
+---
+
+🚀 PRÓXIMAS MELHORIAS PLANEADAS
+==============================
+
+□ Adicionar funcionalidade de EDITAR produtos
+□ Adicionar funcionalidade de EDITAR clientes
+□ Adicionar busca/filtro de produtos
+□ Adicionar relatórios avançados
+□ Melhorar validações de entrada
+
+---
+
+Data: 27 de fevereiro de 2026
+Versão: 2.0
+Status: ✔ PRONTO PARA PRODUÇÃO
