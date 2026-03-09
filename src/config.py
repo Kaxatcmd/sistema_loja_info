@@ -15,20 +15,42 @@ WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 700
 APP_TITLE = "⌂ Sistema de Loja de Informática"
 
-# Estilos
+# Estilos - Tipografia
 FONTS = {
-    'title': ("Arial", 22, "bold"),
-    'large': ("Arial", 14, "bold"),
-    'normal': ("Arial", 11),
-    'small': ("Arial", 10),
-    'mono': ("Courier", 9),
+    'title': ("Segoe UI", 24, "bold"),
+    'subtitle': ("Segoe UI", 16, "bold"),
+    'large': ("Segoe UI", 13, "bold"),
+    'normal': ("Segoe UI", 11),
+    'small': ("Segoe UI", 10),
+    'mono': ("Consolas", 9),
 }
 
+# Paleta de Cores Profissional
 COLORS = {
-    'bg': '#f0f0f0',
-    'logo_bg': "#90D7EC",
-    'logo_text': "#2a71b4",
-    'accent': "#fbffff",
+    # Cores principais
+    'primary': '#1e40af',        # Azul escuro profissional
+    'primary_light': '#3b82f6',  # Azul claro
+    'primary_dark': '#0f172a',   # Azul muito escuro (quase preto)
+    
+    # Cores secundárias
+    'success': '#10b981',        # Verde
+    'danger': '#ef4444',         # Vermelho
+    'warning': '#f59e0b',        # Amarelo/Laranja
+    'info': '#06b6d4',           # Ciano
+    
+    # Neutras
+    'bg': '#f8fafc',             # Fundo muito claro
+    'bg_secondary': '#ffffff',   # Branco puro
+    'text_primary': '#0f172a',   # Texto escuro
+    'text_secondary': '#475569', # Texto cinzento
+    'border': '#cbd5e1',         # Borda cinzenta clara
+    'border_light': '#e2e8f0',   # Borda mais clara
+    'disabled': '#94a3b8',       # Desabilitado
+    
+    # Logo e Header
+    'logo_bg': '#1e40af',
+    'logo_text': '#ffffff',
+    'header_bg': '#ffffff',
 }
 
 # Validação

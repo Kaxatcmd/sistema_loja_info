@@ -1,101 +1,175 @@
 """
-Tela de Login
+Tela de Login - Design Profissional
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
-from src.config import FONTS, COLORS
+from src.config import FONTS, COLORS, WINDOW_WIDTH
 from src.database import DatabaseManager
 from src.models.cliente import Cliente
 from src.utils.security import verify_password
 from src.ui.components.widgets import criar_logo_minimalista
+from src.ui.theme import ModernStyle, criar_botao_primario, criar_botao_secundario, ModernEntry
 
 
 class LoginScreen:
-    """Tela de autenticação do utilizador"""
+    """Tela de autenticação do utilizador com design moderno"""
     
-    def __init__(self, master, on_login_success):
+    def __init__(self, master, on_login_success, notify):
         """
         Inicializa tela de login
         
         Args:
             master: Janela raiz
             on_login_success: Callback quando login bem-sucedido
+            notify: NotificationManager do LojaApp
         """
         self.master = master
         self.on_login_success = on_login_success
         self.db = DatabaseManager()
+        self.notify = notify
+        ModernStyle.configurar_temas()
     
     def show(self):
-        """Exibe a tela de login"""
-        # Limpar janela
+        """Exibe a tela de login com design profissional"""
+        # Limpar janela (exceto notification_frame)
         for widget in self.master.winfo_children():
-            widget.destroy()
+            if widget != self.notify.notification_frame:
+                widget.destroy()
         
-        # Logo
+        # Definir cor de fundo
+        self.master.configure(bg=COLORS['bg'])
+        
+        # Logo elegante
         criar_logo_minimalista(self.master)
         
-        frame_principal = ttk.Frame(self.master)
-        frame_principal.pack(expand=True, fill='both', padx=20, pady=20)
+        # Container principal centralizado
+        container_externo = tk.Frame(self.master, bg=COLORS['bg'])
+        container_externo.pack(expand=True, fill='both', padx=20, pady=20)
+        
+        # Frame central
+        frame_central = tk.Frame(container_externo, bg=COLORS['bg_secondary'],
+                                relief='flat', borderwidth=2,
+                                highlightthickness=2,
+                                highlightbackground=COLORS['border_light'])
+        frame_central.pack(expand=True, padx=50, pady=20, fill='x', ipadx=40, ipady=30)
         
         # Título
-        ttk.Label(frame_principal, text="⌂ LOJA DE INFORMÁTICA ⌂", 
-                 font=FONTS['title']).pack(pady=20)
+        lbl_titulo = tk.Label(frame_central, text="Bem-vindo ao Sistema", 
+                             font=FONTS['title'], fg=COLORS['primary'],
+                             bg=COLORS['bg_secondary'])
+        lbl_titulo.pack(pady=(0, 5))
         
-        # Frame de login
-        frame_login = ttk.LabelFrame(frame_principal, text="Autenticação", padding=20)
-        frame_login.pack(fill='x', padx=40, pady=20)
+        # Subtítulo
+        lbl_subtitulo = tk.Label(frame_central, 
+                                text="Aceda ao seu painel de controlo", 
+                                font=FONTS['normal'], fg=COLORS['text_secondary'],
+                                bg=COLORS['bg_secondary'])
+        lbl_subtitulo.pack(pady=(0, 30))
+        
+        # === FORMULÁRIO DE LOGIN ===
+        form_frame = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
+        form_frame.pack(fill='x', padx=20, pady=20)
         
         # Email
-        ttk.Label(frame_login, text="Email:", font=FONTS['normal']).pack()
+        lbl_email = tk.Label(form_frame, text="📧 Email", 
+                            font=FONTS['normal'], fg=COLORS['text_primary'],
+                            bg=COLORS['bg_secondary'])
+        lbl_email.pack(anchor='w', pady=(0, 5))
+        
         email_var = tk.StringVar()
-        ttk.Entry(frame_login, textvariable=email_var, width=40, 
-                 font=FONTS['normal']).pack(pady=5)
+        entry_email = ModernEntry(form_frame, placeholder="seu@email.com",
+                                 textvariable=email_var, width=40)
+        entry_email.pack(fill='x', pady=(0, 20))
         
         # Password
-        ttk.Label(frame_login, text="Password:", font=FONTS['normal']).pack()
-        password_var = tk.StringVar()
-        ttk.Entry(frame_login, textvariable=password_var, 
-                 width=40, show="*", font=FONTS['normal']).pack(pady=5)
+        lbl_password = tk.Label(form_frame, text="🔐 Palavra-passe", 
+                               font=FONTS['normal'], fg=COLORS['text_primary'],
+                               bg=COLORS['bg_secondary'])
+        lbl_password.pack(anchor='w', pady=(0, 5))
         
-        # Botões
-        frame_botoes = ttk.Frame(frame_principal)
-        frame_botoes.pack(pady=20)
+        password_var = tk.StringVar()
+        entry_password = tk.Entry(form_frame, textvariable=password_var,
+                                 show="●", font=FONTS['normal'],
+                                 bg=COLORS['bg'], fg=COLORS['text_primary'],
+                                 relief='solid', borderwidth=1,
+                                 insertbackground=COLORS['primary'])
+        entry_password.pack(fill='x', pady=(0, 25))
+        
+        # Informação de ajuda
+        lbl_ajuda = tk.Label(form_frame, 
+                            text="💡 Use as credenciais fornecidas para aceder",
+                            font=FONTS['small'], fg=COLORS['text_secondary'],
+                            bg=COLORS['bg_secondary'])
+        lbl_ajuda.pack(anchor='w', pady=(0, 30))
+        
+        # === BOTÕES ===
+        frame_botoes = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
+        frame_botoes.pack(fill='x', padx=20, pady=20)
         
         def fazer_login():
+            """Realiza o login"""
             email = email_var.get().strip()
             password = password_var.get().strip()
             
             if not email or not password:
-                messagebox.showwarning("Aviso", "Preencha todos os campos!")
+                self.notify.warning("Por favor, preencha todos os campos!")
                 return
             
+            # Simular conexão
             if not self.db.conectar():
-                messagebox.showerror("Erro", "Não conseguir conectar à BD!")
+                self.notify.error("Não foi possível conectar à base de dados!")
                 return
             
-            cliente_dados = self.db.executar_query(
-                "SELECT * FROM clientes WHERE email = %s", (email,)
-            )
-            
-            if not cliente_dados:
-                messagebox.showerror("Erro", "Email não encontrado!")
+            try:
+                cliente_dados = self.db.executar_query(
+                    "SELECT * FROM clientes WHERE email = %s", (email,)
+                )
+                
+                if not cliente_dados:
+                    self.notify.error("Email não encontrado!")
+                    self.db.desconectar()
+                    return
+                
+                cliente = Cliente.from_dict(cliente_dados[0])
+                if not verify_password(password, cliente.password):
+                    self.notify.error("Palavra-passe incorreta!")
+                    self.db.desconectar()
+                    return
+                
+                # Login bem-sucedido
+                self.on_login_success(cliente, self.db)
+                
+            except Exception as e:
+                self.notify.error(f"Erro ao fazer login: {str(e)}")
                 self.db.desconectar()
-                return
-            
-            cliente = Cliente.from_dict(cliente_dados[0])
-            if not verify_password(password, cliente.password):
-                messagebox.showerror("Erro", "Password incorreta!")
-                self.db.desconectar()
-                return
-            
-            # Login bem-sucedido
-            self.on_login_success(cliente, self.db)
         
-        ttk.Button(frame_botoes, text="Entrar", 
-                  command=fazer_login).pack(side='left', padx=10)
-        ttk.Button(frame_botoes, text="Sair", 
-                  command=self.master.quit).pack(side='left', padx=10)
+        # Botão Entrar
+        btn_entrar = tk.Button(frame_botoes, text="🔓 Entrar",
+                              command=fazer_login,
+                              font=FONTS['normal'],
+                              bg=COLORS['primary'],
+                              fg='white',
+                              relief='flat',
+                              padx=30, pady=10,
+                              cursor='hand2',
+                              activebackground=COLORS['primary_light'])
+        btn_entrar.pack(side='left', padx=10, fill='x', expand=True)
+        
+        # Botão Sair
+        btn_sair = tk.Button(frame_botoes, text="❌ Sair",
+                            command=self.master.quit,
+                            font=FONTS['normal'],
+                            bg=COLORS['danger'],
+                            fg='white',
+                            relief='flat',
+                            padx=30, pady=10,
+                            cursor='hand2',
+                            activebackground='#dc2626')
+        btn_sair.pack(side='left', padx=10, fill='x', expand=True)
         
         # Permitir Enter para login
         self.master.bind('<Return>', lambda e: fazer_login())
+        
+        # Focar no campo de email
+        entry_email.focus()
+
