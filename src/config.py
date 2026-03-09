@@ -26,9 +26,9 @@ FONTS = {
 
 COLORS = {
     'bg': '#f0f0f0',
-    'logo_bg': '#E0CF34',
-    'logo_text': '#165fa3',
-    'accent': '#18b4ac',
+    'logo_bg': "#90D7EC",
+    'logo_text': "#2a71b4",
+    'accent': "#fbffff",
 }
 
 # Validação

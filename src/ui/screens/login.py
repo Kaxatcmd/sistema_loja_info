@@ -39,7 +39,7 @@ class LoginScreen:
         frame_principal.pack(expand=True, fill='both', padx=20, pady=20)
         
         # Título
-        ttk.Label(frame_principal, text="⌂ LOJA DE INFORMÁTICA", 
+        ttk.Label(frame_principal, text="⌂ LOJA DE INFORMÁTICA ⌂", 
                  font=FONTS['title']).pack(pady=20)
         
         # Frame de login
