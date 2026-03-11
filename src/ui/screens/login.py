@@ -14,17 +14,19 @@ from src.ui.theme import ModernStyle, criar_botao_primario, criar_botao_secundar
 class LoginScreen:
     """Tela de autenticação do utilizador com design moderno"""
     
-    def __init__(self, master, on_login_success, notify):
+    def __init__(self, master, on_login_success, on_register_click, notify):
         """
         Inicializa tela de login
         
         Args:
             master: Janela raiz
             on_login_success: Callback quando login bem-sucedido
+            on_register_click: Callback quando clicar em "Registe-se aqui"
             notify: NotificationManager do LojaApp
         """
         self.master = master
         self.on_login_success = on_login_success
+        self.on_register_click = on_register_click
         self.db = DatabaseManager()
         self.notify = notify
         ModernStyle.configurar_temas()
@@ -166,6 +168,28 @@ class LoginScreen:
                             cursor='hand2',
                             activebackground='#dc2626')
         btn_sair.pack(side='left', padx=10, fill='x', expand=True)
+        
+        # Link de Registo
+        frame_registo = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
+        frame_registo.pack(fill='x', padx=20, pady=(10, 0))
+        
+        lbl_registo_texto = tk.Label(frame_registo, 
+                                     text="Caso não possua conta, ",
+                                     font=FONTS['normal'], 
+                                     fg=COLORS['text_secondary'],
+                                     bg=COLORS['bg_secondary'])
+        lbl_registo_texto.pack(side='left')
+        
+        link_registo = tk.Label(frame_registo, 
+                               text="registe-se aqui",
+                               font=(FONTS['normal'][0], FONTS['normal'][1], 'underline'),
+                               fg=COLORS['primary'],
+                               bg=COLORS['bg_secondary'],
+                               cursor='hand2')
+        link_registo.pack(side='left')
+        
+        # Evento de clique no link
+        link_registo.bind('<Button-1>', lambda e: self.on_register_click())
         
         # Permitir Enter para login
         self.master.bind('<Return>', lambda e: fazer_login())

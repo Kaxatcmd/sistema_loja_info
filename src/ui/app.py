@@ -12,6 +12,7 @@ from src.models.cliente import Cliente
 from src.models.produto import Produto
 from src.utils.validators import validar_nome_produto, validar_preco, validar_stock
 from src.ui.screens.login import LoginScreen
+from src.ui.screens.register import RegisterScreen
 from src.ui.theme import (ModernStyle, criar_botao_primario, criar_botao_secundario,
                           criar_botao_perigo, criar_botao_sucesso)
 from src.ui.components.widgets import criar_header_executivo, criar_separador
@@ -50,8 +51,18 @@ class LojaApp:
     
     def mostrar_login(self):
         """Exibe tela de login"""
-        login = LoginScreen(self.master, self.on_login_success, self.notify)
+        login = LoginScreen(self.master, self.on_login_success, self.mostrar_registo, self.notify)
         login.show()
+    
+    def mostrar_registo(self):
+        """Exibe tela de registo"""
+        register = RegisterScreen(self.master, self.on_register_success, self.mostrar_login, self.notify)
+        register.show()
+    
+    def on_register_success(self):
+        """Callback executado após registo bem-sucedido"""
+        # Após registo bem-sucedido, voltar ao login
+        self.mostrar_login()
     
     def on_login_success(self, usuario_cliente, db):
         """
