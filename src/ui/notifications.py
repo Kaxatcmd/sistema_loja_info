@@ -113,7 +113,9 @@ class NotificationManager:
         btn_close.bind('<Button-1>', lambda e: self._ocultar_notificacao())
         
         # Atualizar altura do frame com place() em vez de config()
-        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=60)
+        num_linhas = mensagem.count('\n') + 1
+        altura = max(60, 20 + num_linhas * 30)
+        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=altura)
         self.notification_frame.lift()  # Garantir que fica acima
         
         # Auto-hide se duracao > 0
@@ -152,92 +154,6 @@ class NotificationManager:
     def error(self, mensagem, duracao=5):
         """Mostra notificação de erro"""
         self._mostrar_notificacao(mensagem, 'error', duracao)
-    
-    def question(self, mensagem, titulo="Confirmar", callback=None):
-        """
-        Mostra diálogo de confirmação dentro da app
-        
-        Args:
-            mensagem: Texto a exibir
-            titulo: Título do diálogo
-            callback: Função a chamar com True/False
-        """
-        # Criar janela de diálogo
-        dialog = tk.Toplevel(self.master)
-        dialog.title(titulo)
-        dialog.geometry("400x200")
-        dialog.configure(bg=COLORS['bg'])
-        dialog.resizable(False, False)
-        
-        # Centralizar na janela principal
-        dialog.transient(self.master)
-        dialog.grab_set()
-        
-        # Container principal
-        frame_main = tk.Frame(dialog, bg=COLORS['bg'])
-        frame_main.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        # Ícone + Mensagem
-        frame_msg = tk.Frame(frame_main, bg=COLORS['bg'])
-        frame_msg.pack(fill='x', pady=(0, 20))
-        
-        lbl_icon = tk.Label(frame_msg, text="❓", font=("Arial", 28),
-                           bg=COLORS['bg'])
-        lbl_icon.pack(side='left', padx=(0, 15))
-        
-        lbl_msg = tk.Label(frame_msg, text=mensagem, font=FONTS['normal'],
-                          fg=COLORS['text_primary'], bg=COLORS['bg'],
-                          wraplength=300, justify='left')
-        lbl_msg.pack(side='left', fill='x', expand=True)
-        
-        # Botões
-        frame_botoes = tk.Frame(frame_main, bg=COLORS['bg'])
-        frame_botoes.pack(fill='x', pady=(20, 0))
-        
-        resultado = {'resposta': None}
-        
-        def sim():
-            resultado['resposta'] = True
-            if callback:
-                callback(True)
-            dialog.destroy()
-        
-        def nao():
-            resultado['resposta'] = False
-            if callback:
-                callback(False)
-            dialog.destroy()
-        
-        btn_sim = tk.Button(frame_botoes, text="✅ Sim",
-                           command=sim,
-                           font=FONTS['normal'],
-                           bg=COLORS['success'],
-                           fg='white',
-                           relief='flat',
-                           padx=25, pady=8,
-                           cursor='hand2',
-                           activebackground='#059669')
-        btn_sim.pack(side='left', padx=5, fill='x', expand=True)
-        
-        btn_nao = tk.Button(frame_botoes, text="❌ Não",
-                           command=nao,
-                           font=FONTS['normal'],
-                           bg=COLORS['danger'],
-                           fg='white',
-                           relief='flat',
-                           padx=25, pady=8,
-                           cursor='hand2',
-                           activebackground='#dc2626')
-        btn_nao.pack(side='left', padx=5, fill='x', expand=True)
-        
-        # Focar no botão Sim
-        btn_sim.focus()
-        
-        # Permitir Enter para confirmar
-        dialog.bind('<Return>', lambda e: sim())
-        dialog.bind('<Escape>', lambda e: nao())
-        
-        return resultado['resposta']
     
     def question(self, mensagem, titulo="Confirmar", callback=None):
         """
