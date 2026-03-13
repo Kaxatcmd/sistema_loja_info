@@ -83,6 +83,21 @@ def criar_base_dados():
         """)
         print("✔ Tabela 'venda_produto' verificada/criada")
         
+        # Criar tabela avaliacoes (avaliações de produtos pelos clientes)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS avaliacoes (
+                id_avaliacao INT PRIMARY KEY AUTO_INCREMENT,
+                id_cliente INT NOT NULL,
+                id_produto INT NOT NULL,
+                estrelas TINYINT NOT NULL CHECK (estrelas BETWEEN 1 AND 5),
+                data_avaliacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cliente_produto (id_cliente, id_produto),
+                FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
+                FOREIGN KEY (id_produto) REFERENCES produtos(id_produto)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        print("✔ Tabela 'avaliacoes' verificada/criada")
+        
         # Criar índices
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_cliente_email 

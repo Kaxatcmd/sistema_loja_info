@@ -181,7 +181,8 @@ Editar `src/config.py` para:
 ## 🚀 Próximas Melhorias (V3.0)
 
 - [ ] Sistema de cupões
-- [ ] Avaliações de produtos
+- [✅] Avaliações de produtos
+- [✅] Descrição de produtos
 - [ ] Wishlist/Favoritos
 - [ ] Notificações de stock
 - [ ] Relatórios em PDF
