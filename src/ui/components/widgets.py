@@ -32,9 +32,9 @@ def criar_logo_minimalista(parent):
                       fill=COLORS['logo_text'], 
                       anchor="center")
     
-    # Linha decorativa inferior
-    canvas.create_line(50, h - 3, w - 50, h - 3, 
-                      fill=COLORS['logo_text'], width=2)
+    # # Linha decorativa inferior
+    # canvas.create_line(50, h - 3, w - 50, h - 3, 
+    #                   fill=COLORS['logo_text'], width=2)
     
     return canvas
 

@@ -13,7 +13,7 @@ DATABASE_CONFIG = {
 # GUI
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 700
-APP_TITLE = "⌂ Sistema de Loja de Informática"
+APP_TITLE = "Sistema de Loja de Informática"
 
 # Estilos - Tipografia
 FONTS = {

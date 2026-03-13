@@ -46,14 +46,14 @@ class LoginScreen:
         
         # Container principal centralizado
         container_externo = tk.Frame(self.master, bg=COLORS['bg'])
-        container_externo.pack(expand=True, fill='both', padx=20, pady=20)
+        container_externo.pack(expand=True, fill='both', padx=20, pady=10)
         
         # Frame central
         frame_central = tk.Frame(container_externo, bg=COLORS['bg_secondary'],
                                 relief='flat', borderwidth=2,
                                 highlightthickness=2,
                                 highlightbackground=COLORS['border_light'])
-        frame_central.pack(expand=True, padx=50, pady=20, fill='x', ipadx=40, ipady=30)
+        frame_central.pack(expand=True, padx=50, pady=10, fill='x', ipadx=30, ipady=15)
         
         # Título
         lbl_titulo = tk.Label(frame_central, text="Bem-vindo ao Sistema", 
@@ -66,11 +66,11 @@ class LoginScreen:
                                 text="Aceda ao seu painel de controlo", 
                                 font=FONTS['normal'], fg=COLORS['text_secondary'],
                                 bg=COLORS['bg_secondary'])
-        lbl_subtitulo.pack(pady=(0, 30))
+        lbl_subtitulo.pack(pady=(0, 20))
         
         # === FORMULÁRIO DE LOGIN ===
         form_frame = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
-        form_frame.pack(fill='x', padx=20, pady=20)
+        form_frame.pack(fill='x', padx=20, pady=10)
         
         # Email
         lbl_email = tk.Label(form_frame, text="📧 Email", 
@@ -81,7 +81,7 @@ class LoginScreen:
         email_var = tk.StringVar()
         entry_email = ModernEntry(form_frame, placeholder="seu@email.com",
                                  textvariable=email_var, width=40)
-        entry_email.pack(fill='x', pady=(0, 20))
+        entry_email.pack(fill='x', pady=(0, 12))
         
         # Password
         lbl_password = tk.Label(form_frame, text="🔐 Palavra-passe", 
@@ -90,23 +90,20 @@ class LoginScreen:
         lbl_password.pack(anchor='w', pady=(0, 5))
         
         password_var = tk.StringVar()
-        entry_password = tk.Entry(form_frame, textvariable=password_var,
-                                 show="●", font=FONTS['normal'],
-                                 bg=COLORS['bg'], fg=COLORS['text_primary'],
-                                 relief='solid', borderwidth=1,
-                                 insertbackground=COLORS['primary'])
-        entry_password.pack(fill='x', pady=(0, 25))
+        entry_password = ModernEntry(form_frame, textvariable=password_var,
+                         width=40, show="●")
+        entry_password.pack(fill='x', pady=(0, 15))
         
         # Informação de ajuda
         lbl_ajuda = tk.Label(form_frame, 
                             text="💡 Use as credenciais fornecidas para aceder",
                             font=FONTS['small'], fg=COLORS['text_secondary'],
                             bg=COLORS['bg_secondary'])
-        lbl_ajuda.pack(anchor='w', pady=(0, 30))
+        lbl_ajuda.pack(anchor='w', pady=(0, 18))
         
         # === BOTÕES ===
         frame_botoes = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
-        frame_botoes.pack(fill='x', padx=20, pady=20)
+        frame_botoes.pack(fill='x', padx=20, pady=(5, 10))
         
         def fazer_login():
             """Realiza o login"""
@@ -152,7 +149,7 @@ class LoginScreen:
                               bg=COLORS['primary'],
                               fg='white',
                               relief='flat',
-                              padx=30, pady=10,
+                              padx=20, pady=8,
                               cursor='hand2',
                               activebackground=COLORS['primary_light'])
         btn_entrar.pack(side='left', padx=10, fill='x', expand=True)
@@ -164,14 +161,14 @@ class LoginScreen:
                             bg=COLORS['danger'],
                             fg='white',
                             relief='flat',
-                            padx=30, pady=10,
+                            padx=20, pady=8,
                             cursor='hand2',
                             activebackground='#dc2626')
         btn_sair.pack(side='left', padx=10, fill='x', expand=True)
         
         # Link de Registo
         frame_registo = tk.Frame(frame_central, bg=COLORS['bg_secondary'])
-        frame_registo.pack(fill='x', padx=20, pady=(10, 0))
+        frame_registo.pack(fill='x', padx=20, pady=(0, 0))
         
         lbl_registo_texto = tk.Label(frame_registo, 
                                      text="Caso não possua conta, ",
