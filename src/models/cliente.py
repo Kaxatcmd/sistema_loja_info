@@ -29,5 +29,16 @@ class Cliente:
             data_criacao=data.get('data_criacao')
         )
     
+    def to_dict(self) -> dict:
+        """Serializa o cliente para dicionário (exclui password)."""
+        return {
+            "id_cliente": self.id_cliente,
+            "nome": self.nome,
+            "email": self.email,
+            "telefone": self.telefone,
+            "is_admin": self.is_admin,
+            "data_criacao": self.data_criacao,
+        }
+
     def __repr__(self):
         return f"Cliente(id={self.id_cliente}, nome={self.nome}, email={self.email}, is_admin={self.is_admin})"

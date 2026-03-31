@@ -6,6 +6,9 @@ Script para inicializar e configurar a BD MariaDB
 import mysql.connector
 from mysql.connector import Error
 from src.utils.security import hash_password
+from src.utils.logger import obter_logger
+
+logger = obter_logger(__name__)
 
 
 def criar_base_dados():
@@ -23,7 +26,7 @@ def criar_base_dados():
         
         # Criar BD se não existir
         cursor.execute("CREATE DATABASE IF NOT EXISTS loja_informatica")
-        print("✔ Base de dados 'loja_informatica' verificada/criada")
+        logger.info("Base de dados 'loja_informatica' verificada/criada")
         
         # Usar BD
         cursor.execute("USE loja_informatica")
@@ -40,7 +43,7 @@ def criar_base_dados():
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        print("✔ Tabela 'clientes' verificada/criada")
+        logger.info("Tabela 'clientes' verificada/criada")
         
         # Criar tabela produtos
         cursor.execute("""
@@ -53,7 +56,7 @@ def criar_base_dados():
                 data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        print("✔ Tabela 'produtos' verificada/criada")
+        logger.info("Tabela 'produtos' verificada/criada")
         
         # Criar tabela vendas
         cursor.execute("""
@@ -66,7 +69,7 @@ def criar_base_dados():
                 FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        print("✔ Tabela 'vendas' verificada/criada")
+        logger.info("Tabela 'vendas' verificada/criada")
         
         # Criar tabela venda_produto (relação muitos-para-muitos)
         cursor.execute("""
@@ -81,23 +84,52 @@ def criar_base_dados():
                 FOREIGN KEY (id_produto) REFERENCES produtos(id_produto)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        print("✔ Tabela 'venda_produto' verificada/criada")
+        logger.info("Tabela 'venda_produto' verificada/criada")
         
-        # Criar tabela avaliacoes (avaliações de produtos pelos clientes)
+        # Criar tabela cupoes
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cupoes (
+                id_cupao     INT PRIMARY KEY AUTO_INCREMENT,
+                codigo       VARCHAR(50) UNIQUE NOT NULL,
+                desconto     DECIMAL(10, 2) NOT NULL,
+                tipo         ENUM('percentagem', 'fixo') NOT NULL DEFAULT 'percentagem',
+                ativo        BOOLEAN DEFAULT TRUE,
+                data_validade DATE,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        logger.info("Tabela 'cupoes' verificada/criada")
+
+        # Criar tabela avaliacoes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS avaliacoes (
                 id_avaliacao INT PRIMARY KEY AUTO_INCREMENT,
-                id_cliente INT NOT NULL,
-                id_produto INT NOT NULL,
-                estrelas TINYINT NOT NULL CHECK (estrelas BETWEEN 1 AND 5),
-                data_avaliacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_cliente_produto (id_cliente, id_produto),
+                id_cliente   INT NOT NULL,
+                id_produto   INT NOT NULL,
+                nota         TINYINT NOT NULL CHECK (nota BETWEEN 1 AND 5),
+                comentario   TEXT,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
-                FOREIGN KEY (id_produto) REFERENCES produtos(id_produto)
+                FOREIGN KEY (id_produto) REFERENCES produtos(id_produto),
+                UNIQUE KEY uq_avaliacao (id_cliente, id_produto)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        print("✔ Tabela 'avaliacoes' verificada/criada")
-        
+        logger.info("Tabela 'avaliacoes' verificada/criada")
+
+        # Criar tabela wishlist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wishlist (
+                id_wishlist  INT PRIMARY KEY AUTO_INCREMENT,
+                id_cliente   INT NOT NULL,
+                id_produto   INT NOT NULL,
+                data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
+                FOREIGN KEY (id_produto) REFERENCES produtos(id_produto),
+                UNIQUE KEY uq_wishlist (id_cliente, id_produto)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        logger.info("Tabela 'wishlist' verificada/criada")
+
         # Criar índices
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_cliente_email 
@@ -115,8 +147,7 @@ def criar_base_dados():
             CREATE INDEX IF NOT EXISTS idx_venda_produto_venda 
             ON venda_produto(id_venda)
         """)
-        print("✔ Índices de BD criados")
-        
+        logger.info("Índices de BD criados")
         # Inserir admin se não existir
         cursor.execute("SELECT * FROM clientes WHERE email = %s", ('admin@example.com',))
         if not cursor.fetchone():
@@ -126,9 +157,8 @@ def criar_base_dados():
                 VALUES (%s, %s, %s, %s)
             """, ('Administrador', 'admin@example.com', admin_password, True))
             conexao.commit()
-            print("✔ Utilizador administrador criado")
-            print("   Email: admin@example.com")
-            print("   Password: admin123")
+            logger.info("Utilizador administrador criado — Email: admin@example.com")
+            logger.info("Credenciais iniciais do admin registadas no log — altere a password após o primeiro login")
         
         # Inserir cliente teste se não existir
         cursor.execute("SELECT * FROM clientes WHERE email = %s", ('cliente@example.com',))
@@ -139,18 +169,16 @@ def criar_base_dados():
                 VALUES (%s, %s, %s, %s)
             """, ('Cliente Teste', 'cliente@example.com', client_password, False))
             conexao.commit()
-            print("✔ Utilizador cliente criado")
-            print("   Email: cliente@example.com")
-            print("   Password: user123")
+            logger.info("Utilizador cliente de teste criado — Email: cliente@example.com")
         
         cursor.close()
         conexao.close()
         
-        print("\n✔ Setup de base de dados completo!")
+        logger.info("Setup de base de dados concluído com sucesso")
         return True
         
     except Error as e:
-        print(f"✘ Erro: {e}")
+        logger.error("Erro durante o setup de BD: %s", e)
         return False
 
 

@@ -4,11 +4,15 @@ Tela de Login - Design Profissional
 
 import tkinter as tk
 from src.config import FONTS, COLORS, WINDOW_WIDTH
-from src.database import DatabaseManager
+from src.database import PooledDatabaseManager
+from src.exceptions import DatabaseError
 from src.models.cliente import Cliente
 from src.utils.security import verify_password
+from src.utils.logger import obter_logger
 from src.ui.components.widgets import criar_logo_minimalista
 from src.ui.theme import ModernStyle, criar_botao_primario, criar_botao_secundario, ModernEntry
+
+logger = obter_logger(__name__)
 
 
 class LoginScreen:
@@ -27,7 +31,7 @@ class LoginScreen:
         self.master = master
         self.on_login_success = on_login_success
         self.on_register_click = on_register_click
-        self.db = DatabaseManager()
+        self.db = PooledDatabaseManager()
         self.notify = notify
         ModernStyle.configurar_temas()
     
@@ -106,40 +110,47 @@ class LoginScreen:
         frame_botoes.pack(fill='x', padx=20, pady=(5, 10))
         
         def fazer_login():
-            """Realiza o login"""
+            """Realiza o login e chama o callback em caso de sucesso."""
             email = email_var.get().strip()
             password = password_var.get().strip()
-            
+
             if not email or not password:
                 self.notify.warning("Por favor, preencha todos os campos!")
                 return
-            
-            # Simular conexão
-            if not self.db.conectar():
-                self.notify.error("Não foi possível conectar à base de dados!")
-                return
-            
+
             try:
+                self.db.conectar()
+
                 cliente_dados = self.db.executar_query(
                     "SELECT * FROM clientes WHERE email = %s", (email,)
                 )
-                
+
                 if not cliente_dados:
+                    logger.warning("Login falhado — email não encontrado: %s", email)
                     self.notify.error("Email não encontrado!")
                     self.db.desconectar()
                     return
-                
+
                 cliente = Cliente.from_dict(cliente_dados[0])
                 if not verify_password(password, cliente.password):
+                    logger.warning(
+                        "Login falhado — palavra-passe incorreta para: %s", email
+                    )
                     self.notify.error("Palavra-passe incorreta!")
                     self.db.desconectar()
                     return
-                
-                # Login bem-sucedido
+
+                # Login bem-sucedido — a conexão fica aberta para a sessão
+                logger.info(
+                    "Login bem-sucedido: %s (admin=%s)",
+                    cliente.email,
+                    bool(cliente.is_admin),
+                )
                 self.on_login_success(cliente, self.db)
-                
-            except Exception as e:
-                self.notify.error(f"Erro ao fazer login: {str(e)}")
+
+            except DatabaseError as e:
+                logger.error("Erro de BD durante login de '%s': %s", email, e)
+                self.notify.error(f"Erro de base de dados: {e}")
                 self.db.desconectar()
         
         # Botão Entrar

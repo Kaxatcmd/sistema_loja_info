@@ -1,6 +1,12 @@
 mysql-connector-python==8.2.0
 bcrypt==4.2.0
 python-dotenv==1.0.0
+fpdf2>=2.7.0
+
+# Testes
+pytest>=8.0.0
+pytest-mock>=3.14.0
+pytest-cov>=5.0.0
 
 # Tkinter é nativo do Python, não precisa instalar!
 # Use: python -m tkinter (para testar se funciona)

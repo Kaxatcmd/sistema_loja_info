@@ -35,6 +35,10 @@ config.ini
 credentials.json
 db_config.py
 
+# Logs da aplicação
+logs/
+*.log
+
 # IDE e Editor
 .vscode/
 .idea/

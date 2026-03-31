@@ -1,14 +1,54 @@
 """
-Configurações da aplicação
+Configurações da aplicação.
+
+As variáveis sensíveis são carregadas a partir do ficheiro .env
+(ver .env.example para referência). Se o ficheiro não existir ou
+uma variável não estiver definida, são usados valores de fallback
+para facilitar o desenvolvimento local.
 """
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Caminho raiz do projecto (dois níveis acima deste ficheiro: src/ → raiz)
+_BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Carrega o ficheiro .env da raíz do projecto, se existir
+load_dotenv(_BASE_DIR / ".env")
+
+
+def _env(chave: str, padrao: str = "") -> str:
+    """
+    Lê uma variável de ambiente com fallback para o valor padrão.
+
+    Args:
+        chave (str): Nome da variável de ambiente.
+        padrao (str): Valor usado quando a variável não está definida.
+
+    Returns:
+        str: Valor da variável ou o valor padrão.
+    """
+    return os.environ.get(chave, padrao)
+
 
 # Base de Dados
 DATABASE_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '',
-    'database': 'loja_informatica'
+    'host':     _env("DB_HOST",     "localhost"),
+    'user':     _env("DB_USER",     "root"),
+    'password': _env("DB_PASSWORD", ""),
+    'database': _env("DB_NAME",     "loja_informatica"),
 }
+
+# Chave secreta da aplicação (usada para hashing, tokens, etc.)
+SECRET_KEY: str = _env("SECRET_KEY", "chave_padrao_insegura_substitua_em_producao")
+
+# Tamanho do pool de conexões (Melhoria 10)
+DB_POOL_SIZE: int = int(_env("DB_POOL_SIZE", "5"))
+
+# Stock mínimo de alerta — produtos com stock inferior a este valor
+# geram notificações no painel de administração.
+STOCK_MINIMO: int = int(_env("STOCK_MINIMO", "5"))
 
 # GUI
 WINDOW_WIDTH = 1000

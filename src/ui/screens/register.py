@@ -4,11 +4,15 @@ Tela de Registo - Design Profissional
 
 import tkinter as tk
 from src.config import FONTS, COLORS, WINDOW_WIDTH
-from src.database import DatabaseManager
+from src.database import PooledDatabaseManager
+from src.exceptions import DatabaseError
 from src.utils.security import hash_password
 from src.utils.validators import validar_email, validar_password
+from src.utils.logger import obter_logger
 from src.ui.components.widgets import criar_logo_minimalista
 from src.ui.theme import ModernStyle, ModernEntry
+
+logger = obter_logger(__name__)
 
 
 class RegisterScreen:
@@ -27,7 +31,7 @@ class RegisterScreen:
         self.master = master
         self.on_register_success = on_register_success
         self.on_back_to_login = on_back_to_login
-        self.db = DatabaseManager()
+        self.db = PooledDatabaseManager()
         self.notify = notify
         ModernStyle.configurar_temas()
     
@@ -197,41 +201,37 @@ class RegisterScreen:
                 self.notify.warning("As palavras-passe não correspondem!")
                 return
             
-            # Conectar BD
-            if not self.db.conectar():
-                self.notify.error("Não foi possível conectar à base de dados!")
-                return
-            
             try:
+                self.db.conectar()
+
                 # Verificar se email já existe
                 cliente_existente = self.db.executar_query(
                     "SELECT * FROM clientes WHERE email = %s", (email,)
                 )
-                
+
                 if cliente_existente:
+                    logger.warning("Registo falhado — email já existe: %s", email)
                     self.notify.error("Este email já está registado no sistema!")
                     self.db.desconectar()
                     return
-                
+
                 # Hash da password
                 password_hash = hash_password(password)
-                
+
                 # Inserir novo cliente (is_admin = 0 por defeito)
-                resultado = self.db.executar_update(
+                self.db.executar_update(
                     "INSERT INTO clientes (nome, email, telefone, password, is_admin) VALUES (%s, %s, %s, %s, 0)",
                     (nome, email, telefone if telefone else None, password_hash)
                 )
-                
-                if resultado:
-                    self.notify.success("Conta criada com sucesso! Redirecionando para login...")
-                    self.master.after(1500, self.on_back_to_login)
-                else:
-                    self.notify.error("Erro ao criar a conta. Tente novamente!")
-                
+
+                logger.info("Novo cliente registado: %s (%s)", nome, email)
+                self.notify.success("Conta criada com sucesso! Redirecionando para login...")
                 self.db.desconectar()
-                
-            except Exception as e:
-                self.notify.error(f"Erro ao registar: {str(e)}")
+                self.master.after(1500, self.on_back_to_login)
+
+            except DatabaseError as e:
+                logger.error("Erro de BD durante registo de '%s': %s", email, e)
+                self.notify.error(f"Erro de base de dados: {e}")
                 self.db.desconectar()
         
         # Botão Registar
