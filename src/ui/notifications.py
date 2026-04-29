@@ -112,32 +112,68 @@ class NotificationManager:
         btn_close.pack(side='right', padx=(10, 0))
         btn_close.bind('<Button-1>', lambda e: self._ocultar_notificacao())
         
-        # Atualizar altura do frame com place() em vez de config()
+        # Calcular altura alvo e iniciar animação de entrada
         num_linhas = mensagem.count('\n') + 1
         altura = max(60, 20 + num_linhas * 30)
-        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=altura)
-        self.notification_frame.lift()  # Garantir que fica acima
-        
+        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=0)
+        self.notification_frame.lift()
+        self._animar_entrada(altura)
+
         # Auto-hide se duracao > 0
         if duracao > 0:
             self.hide_timer = self.master.after(duracao * 1000, self._ocultar_notificacao)
-    
-    def _ocultar_notificacao(self):
-        """Oculta a notificação"""
-        if self.hide_timer is not None:
-            self.master.after_cancel(self.hide_timer)
-            self.hide_timer = None
-        
-        if self.animation_id is not None:
-            self.master.after_cancel(self.animation_id)
+
+    def _animar_entrada(self, altura_alvo, passo=0):
+        """Slide-down suave: 10 passos em ~150ms."""
+        STEPS = 10
+        DURACAO_MS = 150
+        nova_altura = int(altura_alvo * (passo + 1) / STEPS)
+        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=nova_altura)
+        self.notification_frame.lift()
+        if passo + 1 < STEPS:
+            self.animation_id = self.master.after(
+                DURACAO_MS // STEPS,
+                lambda p=passo + 1: self._animar_entrada(altura_alvo, p)
+            )
+        else:
             self.animation_id = None
-        
+
+    def _animar_saida(self, altura_total, passo=0):
+        """Slide-up suave: 8 passos em ~120ms."""
+        STEPS = 8
+        DURACAO_MS = 120
+        nova_altura = max(0, int(altura_total * (STEPS - passo - 1) / STEPS))
+        self.notification_frame.place(x=0, y=0, relwidth=1.0, height=nova_altura)
+        if passo + 1 < STEPS:
+            self.animation_id = self.master.after(
+                DURACAO_MS // STEPS,
+                lambda p=passo + 1: self._animar_saida(altura_total, p)
+            )
+        else:
+            self._limpar_notificacao()
+
+    def _limpar_notificacao(self):
+        """Remove o container e reseta o frame para altura zero."""
         if self.notification_container is not None:
             self.notification_container.destroy()
             self.notification_container = None
-        
-        # Resetar altura com place() em vez de config()
+        self.animation_id = None
         self.notification_frame.place(x=0, y=0, relwidth=1.0, height=0)
+
+    def _ocultar_notificacao(self):
+        """Inicia animação de saída da notificação."""
+        if self.hide_timer is not None:
+            self.master.after_cancel(self.hide_timer)
+            self.hide_timer = None
+        if self.animation_id is not None:
+            self.master.after_cancel(self.animation_id)
+            self.animation_id = None
+
+        altura_atual = self.notification_frame.winfo_height()
+        if altura_atual > 0:
+            self._animar_saida(altura_atual)
+        else:
+            self._limpar_notificacao()
     
     def info(self, mensagem, duracao=3):
         """Mostra notificação de informação"""

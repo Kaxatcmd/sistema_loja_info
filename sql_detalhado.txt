@@ -1,0 +1,934 @@
+================================================================================
+  SQL DETALHADO — SISTEMA LOJA INFORMÁTICA
+  Funcionamento completo da camada de base de dados
+================================================================================
+
+Este documento explica em detalhe como o SQL é utilizado na aplicação:
+estrutura das tabelas, mecanismo de execução, todas as queries por módulo
+e as diferenças entre a camada de repositórios e o acesso direto na UI.
+
+================================================================================
+  ÍNDICE
+================================================================================
+
+  1.  Base de Dados — Configuração e Motor de Execução
+  2.  Pool de Conexões
+  3.  Esquema Completo das Tabelas (setup/database.py)
+  4.  Índices
+  5.  ProdutoRepository — Queries
+  6.  ClienteRepository — Queries
+  7.  VendaRepository — Queries (operação composta)
+  8.  CupaoRepository — Queries
+  9.  StockService — Queries de Monitorização
+  10. app.py — SQL Direto na UI
+  11. login.py e register.py — Autenticação e Registo
+  12. Proteção Contra SQL Injection
+  13. Diferenças entre Camadas (Repositórios vs app.py)
+  14. Resumo de Todas as Queries
+
+================================================================================
+  1. BASE DE DADOS — CONFIGURAÇÃO E MOTOR DE EXECUÇÃO
+================================================================================
+
+Ficheiro: src/database.py
+Classe:   DatabaseManager  (conexão simples)
+          PooledDatabaseManager  (com pool de conexões — usada em produção)
+
+A aplicação acede ao MariaDB através da biblioteca mysql.connector.
+A configuração (host, user, password, database) é lida de src/config.py:
+
+    DATABASE_CONFIG = {
+        'host':     'localhost',
+        'user':     'root',
+        'password': '',
+        'database': 'loja_informatica'
+    }
+
+----- executar_query(query, params=None) -----
+
+Executa instruções SELECT. Devolve uma lista de dicionários, onde cada
+dicionário representa uma linha com os nomes das colunas como chaves.
+
+Usa cursor(dictionary=True) do mysql.connector para obter resultados
+já no formato de dicionário, sem necessidade de mapeamento manual.
+
+Exemplo de utilização:
+    resultados = db.executar_query(
+        "SELECT * FROM produtos WHERE id_produto = %s", (1,)
+    )
+    # resultados = [{'id_produto': 1, 'nome': 'Mouse', 'preco': 25.99, ...}]
+
+----- executar_update(query, params=None) -> int -----
+
+Executa INSERT, UPDATE ou DELETE.
+Faz commit automático após execução bem-sucedida.
+Em caso de erro, reverte a transação (rollback) e lança DatabaseError.
+Devolve cursor.lastrowid — o ID auto-incrementado da última linha inserida,
+útil para INSERT onde se precisa do novo id para inserções seguintes.
+
+Exemplo de utilização:
+    novo_id = db.executar_update(
+        "INSERT INTO produtos (nome, preco, stock) VALUES (%s, %s, %s)",
+        ("Teclado", 49.99, 10)
+    )
+    # novo_id = 5  (id_produto gerado automaticamente pela BD)
+
+================================================================================
+  2. POOL DE CONEXÕES
+================================================================================
+
+Em produção, a aplicação usa PooledDatabaseManager (src/database.py).
+O pool mantém um conjunto de conexões MariaDB abertas e reutiliza-as,
+evitando o custo de abrir e fechar uma conexão por cada operação.
+
+Parâmetros do pool (definidos em src/config.py):
+    DB_POOL_SIZE = 5   # máximo de conexões simultâneas
+
+Cada chamada a executar_query / executar_update:
+  1. Pede uma conexão ao pool (pool.get_connection())
+  2. Executa a query
+  3. Faz commit (update) ou apenas lê (query)
+  4. Devolve a conexão ao pool automaticamente (connection.close()
+     em PooledDatabaseManager devolve ao pool, não fecha de facto)
+
+================================================================================
+  3. ESQUEMA COMPLETO DAS TABELAS
+================================================================================
+
+Ficheiro: setup/database.py
+Executado por: setup_db.py (comando de inicialização único)
+
+O script começa por criar a base de dados se não existir:
+
+    CREATE DATABASE IF NOT EXISTS loja_informatica;
+    USE loja_informatica;
+
+--- TABELA: clientes ---
+
+    CREATE TABLE IF NOT EXISTS clientes (
+        id_cliente  INT PRIMARY KEY AUTO_INCREMENT,
+        nome        VARCHAR(100)  NOT NULL,
+        email       VARCHAR(100)  UNIQUE NOT NULL,
+        telefone    VARCHAR(20),
+        password    VARCHAR(255)  NOT NULL,     -- hash bcrypt (60 chars)
+        is_admin    BOOLEAN       DEFAULT FALSE,
+        data_criacao TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - email tem UNIQUE constraint: não podem existir dois clientes com o
+    mesmo email; a BD rejeita o INSERT antes de qualquer código Python.
+  - password armazena apenas o hash bcrypt, NUNCA a password em texto limpo.
+  - is_admin distingue clientes normais de administradores.
+  - utf8mb4 suporta todos os caracteres Unicode, incluindo emojis.
+
+--- TABELA: categorias ---
+
+    CREATE TABLE IF NOT EXISTS categorias (
+        id_categoria INT PRIMARY KEY AUTO_INCREMENT,
+        nome         VARCHAR(100) NOT NULL,
+        descricao    TEXT,
+        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - Contém as 9 categorias padrão: Portáteis, Monitores, Impressoras,
+    Periféricos, Armazenamento, Componentes, Networking, Software, Outros.
+  - Deve ser criada ANTES de produtos (produtos tem FK para categorias).
+
+--- TABELA: produtos ---
+
+    CREATE TABLE IF NOT EXISTS produtos (
+        id_produto   INT PRIMARY KEY AUTO_INCREMENT,
+        id_categoria INT,
+        nome         VARCHAR(100)  NOT NULL,
+        descricao    TEXT,
+        preco        DECIMAL(10,2) NOT NULL,
+        stock        INT           DEFAULT 0,
+        data_criacao TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_categoria) REFERENCES categorias(id_categoria)
+            ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - id_categoria é nullable: se uma categoria for eliminada, os seus
+    produtos ficam com id_categoria = NULL (ON DELETE SET NULL).
+  - DECIMAL(10,2) é essencial para valores monetários: evita erros de
+    arredondamento de ponto flutuante que ocorreriam com FLOAT ou DOUBLE.
+  - stock DEFAULT 0: produto criado com stock zero até ser definido.
+
+--- TABELA: vendas ---
+
+    CREATE TABLE IF NOT EXISTS vendas (
+        id_venda    INT PRIMARY KEY AUTO_INCREMENT,
+        id_cliente  INT           NOT NULL,
+        data        DATE          NOT NULL,
+        total       DECIMAL(10,2) NOT NULL,
+        data_criacao TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - Cada linha é um cabeçalho de venda (quem comprou, quando, total).
+  - total armazena o valor FINAL já com desconto de cupão aplicado.
+  - FOREIGN KEY garante integridade referencial: não é possível registar
+    uma venda para um id_cliente que não exista na tabela clientes.
+
+--- TABELA: venda_produto ---
+
+    CREATE TABLE IF NOT EXISTS venda_produto (
+        id_venda_produto  INT PRIMARY KEY AUTO_INCREMENT,
+        id_venda          INT           NOT NULL,
+        id_produto        INT           NOT NULL,
+        preco             DECIMAL(10,2) NOT NULL,  -- preço no momento da compra
+        quantidade        INT           NOT NULL,
+        data_criacao      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_venda)   REFERENCES vendas(id_venda),
+        FOREIGN KEY (id_produto) REFERENCES produtos(id_produto)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - Tabela de ligação N:N entre vendas e produtos.
+  - Armazena o preco no momento da compra (snapshot histórico): se o
+    preço do produto mudar depois, o histórico de vendas mantém-se correto.
+  - quantidade permite vender mais do que uma unidade do mesmo produto
+    na mesma venda (na UI atual está hardcoded a 1 — ver secção 13).
+
+--- TABELA: cupoes ---
+
+    CREATE TABLE IF NOT EXISTS cupoes (
+        id_cupao     INT PRIMARY KEY AUTO_INCREMENT,
+        codigo       VARCHAR(50) UNIQUE NOT NULL,
+        desconto     DECIMAL(10,2)      NOT NULL,
+        tipo         ENUM('percentagem','fixo') NOT NULL DEFAULT 'percentagem',
+        ativo        BOOLEAN            DEFAULT TRUE,
+        data_validade DATE,                           -- NULL = sem expiração
+        data_criacao  TIMESTAMP         DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - ENUM restringe tipo a apenas dois valores válidos; a BD rejeita
+    qualquer outro valor sem precisar de validação em Python.
+  - codigo tem UNIQUE: dois cupões não podem ter o mesmo código.
+  - data_validade NULL indica cupão sem prazo de expiração.
+
+--- TABELA: avaliacoes ---
+
+    CREATE TABLE IF NOT EXISTS avaliacoes (
+        id_avaliacao  INT PRIMARY KEY AUTO_INCREMENT,
+        id_cliente    INT    NOT NULL,
+        id_produto    INT    NOT NULL,
+        nota          TINYINT NOT NULL CHECK (nota BETWEEN 1 AND 5),
+        comentario    TEXT,
+        data_criacao  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
+        FOREIGN KEY (id_produto) REFERENCES produtos(id_produto),
+        UNIQUE KEY uq_avaliacao (id_cliente, id_produto)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - CHECK (nota BETWEEN 1 AND 5): a BD impede notas fora do intervalo.
+  - UNIQUE KEY uq_avaliacao (id_cliente, id_produto): um cliente só pode
+    ter uma avaliação por produto. Segunda tentativa de INSERT para o
+    mesmo par é rejeitada pela BD (a aplicação usa UPDATE se já existe).
+
+--- TABELA: wishlist ---
+
+    CREATE TABLE IF NOT EXISTS wishlist (
+        id_wishlist  INT PRIMARY KEY AUTO_INCREMENT,
+        id_cliente   INT NOT NULL,
+        id_produto   INT NOT NULL,
+        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
+        FOREIGN KEY (id_produto) REFERENCES produtos(id_produto),
+        UNIQUE KEY uq_wishlist (id_cliente, id_produto)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  - UNIQUE KEY uq_wishlist (id_cliente, id_produto): um produto não pode
+    aparecer duas vezes na wishlist do mesmo cliente. A aplicação faz um
+    SELECT de verificação antes de tentar INSERT (ver secção 10).
+
+--- DADOS INICIAIS (seed) ---
+
+Após criar as tabelas, o script insere dados de demonstração:
+
+  Categorias (9) — inseridas apenas quando COUNT(*) FROM categorias = 0:
+    Portáteis, Monitores, Impressoras, Periféricos, Armazenamento,
+    Componentes, Networking, Software, Outros.
+
+  Produtos (56) — inseridos apenas quando COUNT(*) FROM produtos = 0:
+    Distribuídos pelas 9 categorias (5 a 9 por categoria).
+    id_categoria resolvido por nome antes de cada INSERT.
+
+  Utilizadores de teste — inseridos apenas se o email não existir:
+
+    Admin:
+      email: admin@example.com  |  password: admin123  |  is_admin: 1
+
+    Cliente:
+      email: cliente@example.com  |  password: user123  |  is_admin: 0
+
+  Todas as passwords são pré-hasheadas com bcrypt antes do INSERT;
+  não ficam em texto limpo em nenhum momento.
+  O script é idempotente: pode ser executado múltiplas vezes sem duplicar dados.
+
+================================================================================
+  4. ÍNDICES
+================================================================================
+
+    CREATE INDEX IF NOT EXISTS idx_cliente_email ON clientes(email);
+    CREATE INDEX IF NOT EXISTS idx_produto_nome  ON produtos(nome);
+    CREATE INDEX IF NOT EXISTS idx_produto_categoria ON produtos(id_categoria);
+    CREATE INDEX IF NOT EXISTS idx_venda_cliente ON vendas(id_cliente);
+    CREATE INDEX IF NOT EXISTS idx_venda_produto_venda ON venda_produto(id_venda);
+
+Porquê estes índices?
+
+  idx_cliente_email:
+    A query de login faz WHERE email = %s. Sem índice seria um full table
+    scan. Com o índice, a BD localiza o cliente em O(log n).
+
+  idx_produto_nome:
+    A pesquisa de produtos usa WHERE nome LIKE %s ORDER BY nome. O índice
+    acelera o ORDER BY e LIKE com padrão prefixado (ex: "Mouse%").
+    Nota: LIKE com % no início (ex: "%Mouse") não usa o índice.
+
+  idx_produto_categoria:
+    O filtro de categoria (WHERE p.id_categoria = %s) e o LEFT JOIN com
+    a tabela categorias beneficiam deste índice. Também é a coluna de FK.
+
+  idx_venda_cliente:
+    O histórico de compras filtra WHERE v.id_cliente = %s. O índice
+    evita percorrer toda a tabela vendas para encontrar as vendas de
+    um cliente específico.
+
+  idx_venda_produto_venda:
+    O JOIN entre vendas e venda_produto usa ON vp.id_venda = v.id_venda.
+    Este índice acelera a travessia dos itens de cada venda.
+
+================================================================================
+  5. PRODUTO REPOSITORY — QUERIES
+================================================================================
+
+Ficheiro: src/repositories/produto_repository.py
+
+O repositório usa uma constante interna _SELECT_PRODUTOS para todas as
+consultas de leitura:
+
+    _SELECT_PRODUTOS = """
+        SELECT p.*, c.nome AS nome_categoria
+        FROM produtos p
+        LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+    """
+
+Isso garante que nome_categoria está sempre disponível nos objectos
+Produto devolvidos, sem repetir o JOIN em cada método.
+
+--- listar_todos() ---
+
+    _SELECT_PRODUTOS + " ORDER BY c.nome, p.nome"
+
+  Devolve todos os produtos ordenados por categoria e depois por nome.
+  Usada na aba "Gerir Produtos" do admin e para exportação PDF de stock.
+
+--- listar_por_categoria(id_categoria) ---
+
+    _SELECT_PRODUTOS + " WHERE p.id_categoria = %s ORDER BY p.nome"
+    params: (id_categoria,)
+
+  Filtra apenas os produtos de uma categoria específica.
+
+--- buscar_por_id(id_produto) ---
+
+    _SELECT_PRODUTOS + " WHERE p.id_produto = %s"
+    params: (id_produto,)
+
+  Localiza um único produto pelo ID primário (com nome_categoria via JOIN).
+  Devolve o primeiro resultado ou None se não existir.
+
+--- buscar_por_nome(nome) ---
+
+    _SELECT_PRODUTOS + " WHERE p.nome LIKE %s ORDER BY c.nome, p.nome"
+    params: (f"%{nome}%",)
+
+  Pesquisa produtos cujo nome contém a string fornecida (case-insensitive
+  no MariaDB com charset utf8mb4 e collation padrão ci).
+
+--- criar(produto) ---
+
+    INSERT INTO produtos (id_categoria, nome, descricao, preco, stock)
+    VALUES (%s, %s, %s, %s, %s)
+    params: (produto.id_categoria, produto.nome, produto.descricao,
+             produto.preco, produto.stock)
+
+  Insere um novo produto com categoria associada.
+  executar_update devolve o lastrowid que é atribuído a produto.id_produto.
+
+--- atualizar(produto) ---
+
+    UPDATE produtos
+    SET id_categoria = %s, nome = %s, descricao = %s, preco = %s, stock = %s
+    WHERE id_produto = %s
+    params: (produto.id_categoria, produto.nome, produto.descricao,
+             produto.preco, produto.stock, produto.id_produto)
+
+  Atualiza todos os campos editáveis incluindo a categoria.
+  A cláusula WHERE garante que apenas o produto com o ID correto é modificado.
+
+--- deletar(id_produto) ---
+
+    DELETE FROM produtos WHERE id_produto = %s
+    params: (id_produto,)
+
+  Remove o produto permanentemente. Se existirem registos em
+  venda_produto com este id_produto, a FOREIGN KEY impede a eliminação
+  (a BD lança um erro de integridade referencial).
+
+--- atualizar_stock(id_produto, quantidade) ---
+
+    UPDATE produtos SET stock = stock + %s WHERE id_produto = %s
+    params: (quantidade, id_produto)
+
+  Ajuste incremental de stock. quantidade pode ser:
+    - positivo: adicionar stock (ex: reposição de inventário)
+    - negativo: retirar stock (ex: devolução — não usado na UI atual)
+  Esta query é diferente das usadas em confirmar_compra (secção 10),
+  que fazem stock = stock - 1 diretamente.
+
+================================================================================
+  6. CLIENTE REPOSITORY — QUERIES
+================================================================================
+
+Ficheiro: src/repositories/cliente_repository.py
+
+--- listar_todos() ---
+
+    SELECT id_cliente, nome, email, telefone, is_admin, data_criacao
+    FROM clientes ORDER BY id_cliente
+
+  NOTA DE SEGURANÇA: esta query exclui propositadamente a coluna password.
+  Mesmo que o resultado seja exposto na UI de administração, os hashes
+  bcrypt nunca são carregados desnecessariamente para memória.
+
+--- buscar_por_email(email) ---
+
+    SELECT * FROM clientes WHERE email = %s
+    params: (email,)
+
+  ÚNICA query que retorna a password (hash bcrypt). Usada exclusivamente
+  no processo de login para comparar o hash com a password fornecida.
+  Devolve o registro completo incluindo a coluna password.
+
+--- buscar_por_id(id_cliente) ---
+
+    SELECT id_cliente, nome, email, telefone, is_admin, data_criacao
+    FROM clientes WHERE id_cliente = %s
+    params: (id_cliente,)
+
+  Tal como listar_todos, exclui a coluna password por segurança.
+
+--- criar(cliente) ---
+
+    INSERT INTO clientes (nome, email, telefone, password, is_admin)
+    VALUES (%s, %s, %s, %s, %s)
+    params: (cliente.nome, cliente.email, cliente.telefone,
+             cliente.password, cliente.is_admin)
+
+  IMPORTANTE: cliente.password deve ser passada já como hash bcrypt.
+  O repositório não faz hashing — essa responsabilidade é do chamador
+  (register.py ou da lógica de admin).
+
+--- atualizar(cliente) ---
+
+    UPDATE clientes
+    SET nome = %s, email = %s, telefone = %s
+    WHERE id_cliente = %s
+    params: (cliente.nome, cliente.email,
+             cliente.telefone, cliente.id_cliente)
+
+  Nota: não atualiza password nem is_admin. A gestão de passwords e
+  permissões é feita separadamente.
+
+================================================================================
+  7. VENDA REPOSITORY — QUERIES (OPERAÇÃO COMPOSTA)
+================================================================================
+
+Ficheiro: src/repositories/venda_repository.py
+
+A criação de uma venda envolve 3 passos que devem ser executados em conjunto
+(compõem uma transação lógica). Se um passo falhar, a venda fica incompleta.
+
+--- criar_venda(id_cliente, itens, total) — PASSO 1 ---
+
+    INSERT INTO vendas (id_cliente, data, total) VALUES (%s, %s, %s)
+    params: (id_cliente, datetime.now().date(), total)
+
+  Insere o cabeçalho da venda. executar_update devolve id_venda (lastrowid)
+  que será usado nos passos seguintes para associar os itens.
+
+--- criar_venda — PASSO 2 (loop por cada item) ---
+
+    INSERT INTO venda_produto (id_venda, id_produto, preco, quantidade)
+    VALUES (%s, %s, %s, %s)
+    params: (id_venda, item.id_produto, item.preco, item.quantidade)
+
+  Para cada produto no carrinho, insere uma linha em venda_produto.
+  O preco é gravado no valor atual do produto (snapshot histórico).
+
+--- criar_venda — PASSO 3 (loop por cada item) ---
+
+    UPDATE produtos SET stock = stock - %s WHERE id_produto = %s
+    params: (item.quantidade, item.id_produto)
+
+  Decrementa o stock de cada produto vendido.
+  stock = stock - %s é uma operação atómica na BD: lê e escreve na
+  mesma instrução, evitando race conditions em cenários concorrentes.
+
+--- historico_cliente(id_cliente) --- [query com JOIN]
+
+    SELECT v.id_venda, v.data, v.total,
+           p.id_produto, p.nome AS nome_produto,
+           vp.preco AS preco_unitario, vp.quantidade
+    FROM vendas v
+    JOIN venda_produto vp ON vp.id_venda   = v.id_venda
+    JOIN produtos      p  ON p.id_produto  = vp.id_produto
+    WHERE v.id_cliente = %s
+    ORDER BY v.data DESC, v.id_venda DESC
+    params: (id_cliente,)
+
+  JOIN triplo: liga vendas -> venda_produto -> produtos para obter
+  o nome e preço de cada item de cada venda do cliente.
+  ORDER BY v.data DESC, v.id_venda DESC: vendas mais recentes primeiro;
+  dentro da mesma data, ID mais alto primeiro.
+
+--- historico_geral(limite) --- [admin]
+
+    SELECT v.id_venda, c.nome AS nome_cliente, v.data, v.total
+    FROM vendas v
+    JOIN clientes c ON c.id_cliente = v.id_cliente
+    ORDER BY v.data DESC, v.id_venda DESC
+    LIMIT %s
+    params: (limite,)   -- limite padrão: 100
+
+  JOIN entre vendas e clientes para obter o nome do cliente.
+  LIMIT controla o volume de dados devolvido (evita carregar toda a
+  tabela em memória caso haja milhares de vendas).
+
+--- total_vendas_periodo(data_inicio, data_fim) ---
+
+    SELECT COALESCE(SUM(total), 0) AS soma_total
+    FROM vendas WHERE data BETWEEN %s AND %s
+    params: (data_inicio, data_fim)
+
+  COALESCE(SUM(total), 0): se não houver vendas no período, SUM devolve
+  NULL. COALESCE substitui NULL por 0, evitando que o código Python tenha
+  de tratar None.
+  Devolve um único número — o total de receita no período solicitado.
+
+================================================================================
+  8. CUPAO REPOSITORY — QUERIES
+================================================================================
+
+Ficheiro: src/repositories/cupao_repository.py
+
+--- listar_todos() ---
+
+    SELECT * FROM cupoes ORDER BY codigo
+
+  Lista todos os cupões (ativos e inativos) ordenados pelo código.
+
+--- listar_ativos() ---
+
+    SELECT * FROM cupoes WHERE ativo = %s ORDER BY codigo
+    params: (True,)
+
+  Apenas cupões com ativo = TRUE. Usada na validação de cupão na UI
+  do cliente (não faz sentido aplicar um cupão desativado).
+
+--- buscar_por_id(id_cupao) ---
+
+    SELECT * FROM cupoes WHERE id_cupao = %s
+    params: (id_cupao,)
+
+--- buscar_por_codigo(codigo) ---
+
+    SELECT * FROM cupoes WHERE UPPER(codigo) = UPPER(%s)
+    params: (codigo.strip(),)
+
+  UPPER() em ambos os lados: torna a pesquisa case-insensitive de forma
+  explícita, independente da collation da BD.
+  Exemplo: "PROMO10", "promo10" e "Promo10" encontram o mesmo cupão.
+  .strip() remove espaços que o utilizador possa ter inserido por engano.
+
+--- criar(cupao) ---
+
+    INSERT INTO cupoes (codigo, desconto, tipo, ativo, data_validade)
+    VALUES (%s, %s, %s, %s, %s)
+    params: (cupao.codigo, cupao.desconto, cupao.tipo,
+             cupao.ativo, cupao.data_validade)
+
+--- atualizar(cupao) ---
+
+    UPDATE cupoes
+    SET codigo=%s, desconto=%s, tipo=%s, ativo=%s, data_validade=%s
+    WHERE id_cupao=%s
+    params: (cupao.codigo, cupao.desconto, cupao.tipo,
+             cupao.ativo, cupao.data_validade, cupao.id_cupao)
+
+--- desativar(id_cupao) ---
+
+    UPDATE cupoes SET ativo=%s WHERE id_cupao=%s
+    params: (False, id_cupao)
+
+  Operação pontual de desativação sem necessidade de carregar o objeto
+  cupão completo. Mais eficiente do que atualizar() para este caso de uso.
+
+--- deletar(id_cupao) ---
+
+    DELETE FROM cupoes WHERE id_cupao=%s
+    params: (id_cupao,)
+
+================================================================================
+  9. STOCK SERVICE — QUERIES DE MONITORIZAÇÃO
+================================================================================
+
+Ficheiro: src/services/stock_service.py
+
+--- produtos_stock_baixo(limiar) ---
+
+    SELECT * FROM produtos WHERE stock < %s ORDER BY stock ASC, nome ASC
+    params: (limiar,)   -- limiar padrão: 5
+
+  Devolve os produtos ordenados do stock mais baixo para o mais alto,
+  e dentro do mesmo stock, por ordem alfabética.
+  Usado para gerar alertas visuais no painel admin.
+
+--- tem_alertas(limiar) ---
+
+    SELECT COUNT(*) AS total FROM produtos WHERE stock < %s
+    params: (limiar,)
+
+  Verifica rapidamente se existem produtos em alerta sem carregar os
+  dados completos. Devolve apenas um inteiro (COUNT). Usado para decidir
+  se vale a pena mostrar o badge de alerta de stock.
+
+================================================================================
+  10. app.py — SQL DIRETO NA UI
+================================================================================
+
+Ficheiro: src/ui/app.py
+
+Em algumas funcionalidades, a UI acede diretamente à BD (self.db.executar_*)
+sem passar pelos repositórios. Isto acontece para funcionalidades que foram
+adicionadas diretamente à UI (wishlist, avaliações, compra finalizada).
+
+--- Explorar Produtos (carregamento da aba) ---
+
+    SELECT p.*, c.nome AS nome_categoria
+    FROM produtos p
+    LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+    WHERE p.stock > 0
+    ORDER BY c.nome, p.nome
+
+  LEFT JOIN com categorias para obter o nome da categoria de cada produto.
+  Ordenado por categoria e depois por nome, para agrupar visualmente.
+  Apenas produtos com stock > 0 são mostrados ao cliente.
+
+  Após carregar os produtos, carrega também as médias de avaliação:
+
+    SELECT id_produto, ROUND(AVG(nota), 1) AS media, COUNT(*) AS total
+    FROM avaliacoes
+    GROUP BY id_produto
+
+  As médias são combinadas com os produtos no lado Python para preencher
+  a coluna Avaliação (ex: ★★★★☆  4.2). A função auxiliar _estrelas()
+  converte a média numérica em estrelas Unicode.
+
+--- Wishlist: verificar se produto já existe ---
+
+    SELECT id_wishlist FROM wishlist
+    WHERE id_cliente = %s AND id_produto = %s
+    params: (id_cliente, id_produto)
+
+  Antes de inserir, a aplicação verifica se o par (cliente, produto)
+  já existe. Se existir, mostra aviso; se não existir, prossegue com INSERT.
+  (A UNIQUE KEY na BD também impediria o duplicado, mas a verificação
+  prévia permite uma mensagem de erro amigável em vez de exceção da BD.)
+
+--- Wishlist: adicionar produto ---
+
+    INSERT INTO wishlist (id_cliente, id_produto) VALUES (%s, %s)
+    params: (id_cliente, id_produto)
+
+--- Wishlist: listar produtos do cliente ---
+
+    SELECT w.id_wishlist, p.id_produto, p.nome, p.preco, p.stock
+    FROM wishlist w
+    JOIN produtos p ON p.id_produto = w.id_produto
+    WHERE w.id_cliente = %s
+    ORDER BY p.nome
+    params: (id_cliente,)
+
+  JOIN com produtos para obter o nome, preço e stock atual do produto
+  guardado. Se o produto tiver sido eliminado, não aparece (INNER JOIN).
+
+--- Wishlist: remover produto ---
+
+    DELETE FROM wishlist WHERE id_wishlist = %s
+    params: (id_wishlist,)
+
+  Remove pelo ID primário da linha wishlist (mais preciso do que usar
+  o par id_cliente/id_produto).
+
+--- Avaliações: carregar produtos comprados com médias e nota do cliente ---
+
+    SELECT p.id_produto, p.nome,
+           ROUND(AVG(a.nota), 1)         AS media,
+           COUNT(a.id_avaliacao)          AS total_avaliacoes,
+           MAX(CASE WHEN a.id_cliente = %s THEN a.nota       END) AS minha_nota,
+           MAX(CASE WHEN a.id_cliente = %s THEN a.comentario END) AS meu_comentario
+    FROM produtos p
+    INNER JOIN (
+        SELECT DISTINCT vp.id_produto
+        FROM venda_produto vp
+        JOIN vendas v ON v.id_venda = vp.id_venda
+        WHERE v.id_cliente = %s
+    ) AS comprados ON comprados.id_produto = p.id_produto
+    LEFT JOIN avaliacoes a ON a.id_produto = p.id_produto
+    GROUP BY p.id_produto, p.nome
+    ORDER BY p.nome
+    params: (id_cliente, id_cliente, id_cliente)  -- 3 placeholders
+
+  Explicação detalhada:
+  - INNER JOIN na subquery de venda_produto + vendas: garante que só
+    aparecem produtos que o cliente efectivamente comprou. Produtos nunca
+    comprados não aparecem na lista (ao contrário de um FROM produtos).
+  - LEFT JOIN avaliacoes (após o INNER JOIN): traz as avaliações de TODOS
+    os clientes para calcular a média global, mas mantém o produto mesmo
+    que não tenha nenhuma avaliação.
+  - CASE WHEN a.id_cliente = %s: extrai a nota e comentário específicos
+    deste cliente sem precisar de uma segunda query.
+  - MAX() com CASE: idioma SQL para "pivotar" uma coluna — devolve o valor
+    do cliente ou NULL se não tiver avaliado.
+  - id_cliente é passado 3 vezes: para os dois CASE WHEN e para o WHERE
+    da subquery.
+
+--- Avaliações: verificar se já existe avaliação ---
+
+    SELECT id_avaliacao FROM avaliacoes
+    WHERE id_cliente = %s AND id_produto = %s
+    params: (id_cliente, id_produto)
+
+  Determina se deve fazer INSERT (primeira avaliação) ou UPDATE (edição
+  de avaliação existente). Padrão UPSERT manual.
+
+--- Avaliações: editar avaliação existente ---
+
+    UPDATE avaliacoes SET nota = %s, comentario = %s
+    WHERE id_cliente = %s AND id_produto = %s
+    params: (nota, comentario, id_cliente, id_produto)
+
+--- Avaliações: criar nova avaliação ---
+
+    INSERT INTO avaliacoes (id_cliente, id_produto, nota, comentario)
+    VALUES (%s, %s, %s, %s)
+    params: (id_cliente, id_produto, nota, comentario)
+
+--- Confirmar Compra — PASSO 1: criar venda ---
+
+    INSERT INTO vendas (id_cliente, data, total) VALUES (%s, %s, %s)
+    params: (id_cliente, datetime.now().date(), total)
+
+  total é o valor FINAL após desconto de cupão.
+
+--- Confirmar Compra — PASSO 2: inserir itens (loop) ---
+
+    INSERT INTO venda_produto (id_venda, id_produto, preco, quantidade)
+    VALUES (%s, %s, %s, %s)
+    params: (id_venda, item.id_produto, item.preco, 1)
+
+  NOTA: quantidade está hardcoded a 1. Ver secção 13 para explicação.
+
+--- Confirmar Compra — PASSO 3: decrementar stock (loop) ---
+
+    UPDATE produtos SET stock = stock - 1 WHERE id_produto = %s
+    params: (item.id_produto,)
+
+  NOTA: decrementa sempre 1, independentemente da quantidade.
+  Ver secção 13 para explicação.
+
+================================================================================
+  11. LOGIN.PY E REGISTER.PY — AUTENTICAÇÃO E REGISTO
+================================================================================
+
+Ficheiro: src/ui/screens/login.py
+
+--- Verificar credenciais ---
+
+    SELECT * FROM clientes WHERE email = %s
+    params: (email,)
+
+  Retorna o registo completo do cliente (incluindo password hash).
+  Depois de obter o resultado, usa bcrypt.checkpw() para comparar a
+  password fornecida com o hash armazenado:
+
+      hash_armazenado = resultado['password'].encode('utf-8')
+      bcrypt.checkpw(password_digitada.encode('utf-8'), hash_armazenado)
+
+  Se o email não existir, executar_query devolve [] e o login falha
+  sem revelar se foi o email ou a password que estava errado.
+
+Ficheiro: src/ui/screens/register.py
+
+--- Verificar se email já está registado ---
+
+    SELECT * FROM clientes WHERE email = %s
+    params: (email,)
+
+  Antes de inserir, verifica se o email já existe para dar feedback
+  imediato ao utilizador ("Email já registado").
+
+--- Registar novo cliente ---
+
+    INSERT INTO clientes (nome, email, telefone, password, is_admin)
+    VALUES (%s, %s, %s, %s, 0)
+    params: (nome, email, telefone, hash_bcrypt)
+
+  NOTA: is_admin = 0 (literal zero) está hardcoded no INSERT de registo
+  público. Nenhum utilizador registado pela interface pública pode ser
+  admin — a promoção a admin deve ser feita diretamente na BD ou pelo
+  painel de admin.
+
+  password é gerada com bcrypt antes de ser passada:
+      hash_bcrypt = bcrypt.hashpw(
+          password.encode('utf-8'), bcrypt.gensalt()
+      ).decode('utf-8')
+
+================================================================================
+  12. PROTEÇÃO CONTRA SQL INJECTION
+================================================================================
+
+TODAS as queries da aplicação usam prepared statements com placeholders %s.
+Nunca é feita concatenação de strings com dados do utilizador.
+
+Exemplo INSEGURO (não usado na aplicação):
+    query = f"SELECT * FROM clientes WHERE email = '{email}'"
+    # Se email = "' OR '1'='1", retorna todos os clientes!
+
+Exemplo SEGURO (como é feito na aplicação):
+    query = "SELECT * FROM clientes WHERE email = %s"
+    db.executar_query(query, (email,))
+    # mysql.connector escapa o valor automaticamente
+
+O driver mysql.connector processa os parâmetros separadamente do texto
+da query: a BD nunca interpreta o valor do parâmetro como SQL.
+
+Adicionalmente:
+  - bcrypt para passwords: mesmo que a BD fosse comprometida, as passwords
+    não podem ser recuperadas sem o ataque de força bruta.
+  - Sem queries dinâmicas: nenhuma parte da query é construída a partir
+    de input do utilizador (nem nomes de colunas nem de tabelas).
+
+================================================================================
+  13. DIFERENÇAS ENTRE CAMADAS (REPOSITÓRIOS VS app.py)
+================================================================================
+
+A aplicação tem dois padrões de acesso à BD que coexistem:
+
+PADRÃO 1 — Repositórios (src/repositories/)
+  - Código organizado por entidade (produto, cliente, venda, cupão)
+  - Testável de forma isolada (os repositórios têm testes unitários e de integração)
+  - Recebem/devolvem objetos do modelo (ProdutoRepository devolve Produto)
+  - VendaRepository.criar_venda() usa item.quantidade real
+
+PADRÃO 2 — SQL direto em app.py
+  - Usado para wishlist, avaliações e confirmar_compra
+  - Funcionalidades adicionadas diretamente na UI
+  - Trabalha com dicionários e valores primitivos em vez de objetos modelo
+
+DIFERENÇA CRÍTICA — quantidade na compra:
+
+  VendaRepository.criar_venda() (Padrão 1):
+      INSERT INTO venda_produto (..., quantidade) VALUES (%s,%s,%s,%s)
+      params: (..., item.quantidade)          # usa a quantidade real do item
+      UPDATE produtos SET stock = stock - %s  # decrementa a quantidade real
+
+  app.py confirmar_compra() (Padrão 2):
+      INSERT INTO venda_produto (..., quantidade) VALUES (%s,%s,%s,%s)
+      params: (..., 1)                         # hardcoded a 1
+      UPDATE produtos SET stock = stock - 1   # hardcoded a 1
+
+  Como o carrinho atual só permite 1 unidade por produto, ambos os
+  comportamentos são equivalentes na prática. Se no futuro o carrinho
+  permitir múltiplas quantidades, o código em app.py terá de ser atualizado.
+
+DIFERENÇA — is_admin no registo:
+
+  ClienteRepository.criar() (Padrão 1):
+      INSERT INTO clientes (..., is_admin) VALUES (%s,%s,%s,%s,%s)
+      params: (..., cliente.is_admin)    # usa o valor do objeto, configurável
+
+  register.py (Padrão 2):
+      INSERT INTO clientes (..., is_admin) VALUES (%s,%s,%s,%s, 0)
+      # is_admin=0 hardcoded — registo público nunca cria admin
+
+  Esta diferença é intencional: o registo público NUNCA deve criar admins.
+  O ClienteRepository pode criar admins porque é usado pelo painel de admin.
+
+================================================================================
+  14. RESUMO DE TODAS AS QUERIES
+================================================================================
+
+  TABELA CONSULTADA      OPERAÇÃO    LOCALIZAÇÃO
+  ---------------------  ----------  ------------------------------------------
+  categorias             SELECT ALL  CategoriaRepository.listar_todos()
+  categorias             SELECT      CategoriaRepository.buscar_por_id()
+  categorias             INSERT      CategoriaRepository.criar()
+  categorias             UPDATE      CategoriaRepository.atualizar()
+  categorias             DELETE      CategoriaRepository.deletar()
+  categorias             SELECT CNT  CategoriaRepository.contar_produtos()
+  produtos               SELECT JOIN ProdutoRepository.listar_todos() (LEFT JOIN cats)
+  produtos               SELECT JOIN ProdutoRepository.listar_por_categoria()
+  produtos               SELECT JOIN ProdutoRepository.buscar_por_id()
+  produtos               SELECT JOIN ProdutoRepository.buscar_por_nome()
+  produtos               INSERT      ProdutoRepository.criar() (c/ id_categoria)
+  produtos               UPDATE      ProdutoRepository.atualizar() (c/ id_categoria)
+  produtos               DELETE      ProdutoRepository.deletar()
+  produtos               UPDATE      ProdutoRepository.atualizar_stock()
+  produtos               SELECT      StockService.produtos_stock_baixo()
+  produtos               SELECT      StockService.tem_alertas()
+  produtos               SELECT JOIN app.py._criar_aba_explorar_produtos()
+  produtos               SELECT AVG  app.py._criar_aba_explorar_produtos() (médias)
+  produtos               UPDATE -1   app.py.confirmar_compra() — loop
+  produtos               UPDATE -N   VendaRepository.criar_venda() — loop
+  clientes               SELECT      ClienteRepository.listar_todos() (sem pw)
+  clientes               SELECT*     ClienteRepository.buscar_por_email() (c/pw)
+  clientes               SELECT      ClienteRepository.buscar_por_id()
+  clientes               INSERT      ClienteRepository.criar()
+  clientes               UPDATE      ClienteRepository.atualizar()
+  clientes               SELECT      login.py (autenticação)
+  clientes               SELECT      register.py (verificar email)
+  clientes               INSERT      register.py (novo cliente)
+  vendas                 INSERT      VendaRepository.criar_venda() passo 1
+  vendas                 INSERT      app.py.confirmar_compra() passo 1
+  vendas                 SELECT JOIN VendaRepository.historico_cliente()
+  vendas                 SELECT JOIN VendaRepository.historico_geral()
+  vendas                 SELECT SUM  VendaRepository.total_vendas_periodo()
+  venda_produto          INSERT      VendaRepository.criar_venda() passo 2
+  venda_produto          INSERT      app.py.confirmar_compra() passo 2
+  venda_produto          INNER JOIN  app.py._criar_aba_avaliacoes() (subquery)
+  cupoes                 SELECT ALL  CupaoRepository.listar_todos()
+  cupoes                 SELECT      CupaoRepository.listar_ativos()
+  cupoes                 SELECT      CupaoRepository.buscar_por_id()
+  cupoes                 SELECT      CupaoRepository.buscar_por_codigo() UPPER
+  cupoes                 INSERT      CupaoRepository.criar()
+  cupoes                 UPDATE      CupaoRepository.atualizar()
+  cupoes                 UPDATE      CupaoRepository.desativar()
+  cupoes                 DELETE      CupaoRepository.deletar()
+  wishlist               SELECT      app.py.adicionar_wishlist() (verificação)
+  wishlist               INSERT      app.py.adicionar_wishlist()
+  wishlist               SELECT JOIN app.py._criar_aba_wishlist()
+  wishlist               DELETE      app.py.remover_da_wishlist()
+  avaliacoes             SELECT JOIN app.py._criar_aba_avaliacoes() (c/ INNER JOIN subquery)
+  avaliacoes             SELECT      app.py._dialog_avaliar_produto() (check)
+  avaliacoes             UPDATE      app.py._dialog_avaliar_produto() (editar)
+  avaliacoes             INSERT      app.py._dialog_avaliar_produto() (criar)
+
+  TOTAL: 50 queries distintas em toda a aplicação
+
+================================================================================
+  FIM DO DOCUMENTO
+================================================================================

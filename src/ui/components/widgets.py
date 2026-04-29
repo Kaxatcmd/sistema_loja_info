@@ -26,16 +26,15 @@ def criar_logo_minimalista(parent):
     h = 120
     
     # Texto principal
-    canvas.create_text(w/2, h/2 + 5, 
-                      text="🛒 INFO SHOP", 
-                      font=("Segoe UI", 48, "bold"), 
-                      fill=COLORS['logo_text'], 
+    canvas.create_text(w/2, h/2 + 5,
+                      text="🛒 INFO SHOP",
+                      font=("Segoe UI", 48, "bold"),
+                      fill=COLORS['logo_text'],
                       anchor="center")
-    
-    # # Linha decorativa inferior
-    # canvas.create_line(50, h - 3, w - 50, h - 3, 
-    #                   fill=COLORS['logo_text'], width=2)
-    
+
+    # Linha decorativa inferior
+    canvas.create_rectangle(0, h - 5, w, h, fill=COLORS['primary_light'], outline='')
+
     return canvas
 
 
@@ -92,7 +91,9 @@ def criar_header_executivo(parent, titulo="", usuario="", callback_logout=None):
                        cursor='hand2',
                        activebackground='#dc2626')
         btn.pack(side='right')
-    
+        btn.bind('<Enter>', lambda e: btn.config(bg='#dc2626'))
+        btn.bind('<Leave>', lambda e: btn.config(bg=COLORS['danger']))
+
     # Linha separadora
     separador = tk.Frame(frame, bg=COLORS['border_light'], height=1)
     separador.pack(fill='x', side='bottom')
@@ -118,10 +119,13 @@ def criar_card_info(parent, titulo="", conteudo="", icone=""):
                    borderwidth=1, highlightthickness=1,
                    highlightbackground=COLORS['border_light'])
     card.pack(fill='both', expand=True, padx=10, pady=5)
-    
+
+    # Barra de acento colorida (4px à esquerda)
+    tk.Frame(card, bg=COLORS['primary'], width=4).pack(side='left', fill='y')
+
     # Conteúdo
     container = tk.Frame(card, bg=COLORS['bg_secondary'])
-    container.pack(fill='both', expand=True, padx=15, pady=12)
+    container.pack(side='left', fill='both', expand=True, padx=15, pady=12)
     
     if icone or titulo:
         header = tk.Frame(container, bg=COLORS['bg_secondary'])

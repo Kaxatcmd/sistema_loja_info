@@ -183,9 +183,9 @@ Editar `src/config.py` para:
 - [ ] Sistema de cupões
 - [✅] Avaliações de produtos
 - [✅] Descrição de produtos
-- [ ] Wishlist/Favoritos
-- [ ] Notificações de stock
-- [ ] Relatórios em PDF
+- [✅ ] Wishlist/Favoritos
+- [✅ ] Notificações de stock
+- [✅ ] Relatórios em PDF
 - [ ] API REST
 - [ ] Dark mode
 - [ ] Múltiplas moedas

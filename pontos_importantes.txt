@@ -1,0 +1,767 @@
+========================================================================
+  SISTEMA LOJA DE INFORMATICA — PONTOS IMPORTANTES DO CODIGO
+  Data: Abril 2026
+========================================================================
+
+Este documento descreve as funcoes e componentes mais relevantes do
+projecto, divididos por camada: entrada da aplicacao, interface grafica,
+comunicacao com a base de dados, modelos de dados, repositorios,
+servicos e utilitarios.
+
+------------------------------------------------------------------------
+INDICE
+------------------------------------------------------------------------
+ 1. Ponto de Entrada (main.py)
+ 2. Configuracoes Globais (src/config.py)
+ 3. Base de Dados (src/database.py)
+ 4. Excecao Personalizada (src/exceptions.py)
+ 5. Modelos de Dados (src/models/)
+ 6. Repositorios (src/repositories/)
+ 7. Servicos (src/services/)
+ 8. Utilitarios (src/utils/)
+ 9. Interface Grafica — Aplicacao Principal (src/ui/app.py)
+10. Interface Grafica — Ecras de Login e Registo (src/ui/screens/)
+11. Notificacoes (src/ui/notifications.py)
+12. Tema e Widgets (src/ui/theme.py, src/ui/components/widgets.py)
+13. Fluxo Completo de uma Interacao Tipica
+
+========================================================================
+1. PONTO DE ENTRADA — main.py
+========================================================================
+
+Funcao: main()
+  - Cria a janela raiz do Tkinter (tk.Tk).
+  - Instancia LojaApp, passando-lhe a janela raiz.
+  - Arranca o ciclo de eventos com root.mainloop().
+
+Porque e importante:
+  Sem esta funcao nao existe aplicacao. E o unico ponto onde o Tkinter
+  e inicializado. O guarda "if __name__ == '__main__'" garante que o
+  codigo so corre quando o ficheiro e executado directamente.
+
+  Exemplo de uso:
+    python main.py
+
+
+========================================================================
+2. CONFIGURACOES GLOBAIS — src/config.py
+========================================================================
+
+O ficheiro le variaveis de ambiente a partir de um ficheiro ".env" na
+raiz do projecto (usando python-dotenv). Se o ficheiro nao existir,
+sao usados valores de desenvolvimento padrao.
+
+Variaveis mais importantes:
+
+  DATABASE_CONFIG (dict)
+    Contem host, user, password e database para a ligacao MariaDB.
+    Lidos de DB_HOST, DB_USER, DB_PASSWORD, DB_NAME no .env.
+
+  DB_POOL_SIZE (int)
+    Numero maximo de conexoes no pool (padrao: 5).
+
+  STOCK_MINIMO (int)
+    Limiar para alertas de stock baixo (padrao: 5 unidades).
+
+  FONTS (dict)
+    Dicionario com todas as fontes usadas na UI (title, subtitle,
+    normal, small, mono). Centraliza o estilo tipografico.
+
+  COLORS (dict)
+    Paleta de cores da aplicacao (primary, success, danger, warning,
+    info, bg, bg_secondary, text_primary, text_secondary, border_light).
+
+  WINDOW_WIDTH / WINDOW_HEIGHT
+    Dimensoes iniciais da janela principal (padrao: 1200 x 750).
+
+  EMAIL_PATTERN (str)
+    Expressao regular usada no validador de email.
+
+  PASSWORD_MIN_LENGTH (int)
+    Comprimento minimo aceite para passwords (padrao: 6).
+
+Funcao auxiliar: _env(chave, padrao)
+  Le uma variavel de ambiente com fallback seguro.
+
+
+========================================================================
+3. BASE DE DADOS — src/database.py
+========================================================================
+
+Existem duas classes de gestao de BD com interface identica.
+
+--- DatabaseManager ---
+
+  __init__(config=None)
+    Recebe um dicionario de configuracao (ou usa DATABASE_CONFIG).
+    Armazena as credenciais mas NAO abre ligacao ainda.
+
+  conectar() -> bool
+    Abre a ligacao ao servidor MariaDB usando mysql.connector.
+    Lanca DatabaseError se o servidor estiver indisponivel.
+    Deve ser chamada antes de qualquer query.
+
+  desconectar()
+    Fecha a ligacao de forma segura. Deve ser chamada no final da
+    sessao ou quando o utilizador faz logout.
+
+  executar_query(query, params=None) -> list[dict]
+    Executa instrucoes SELECT.
+    Usa cursor(dictionary=True) para devolver cada linha como
+    dicionario {nome_coluna: valor}.
+    Parametros passados como tuplo (prepared statements) — protege
+    contra SQL Injection.
+    Exemplo:
+      resultados = db.executar_query(
+          "SELECT * FROM produtos WHERE id_produto = %s", (1,)
+      )
+
+  executar_update(query, params=None) -> int
+    Executa INSERT, UPDATE ou DELETE.
+    Faz commit automatico em caso de sucesso.
+    Em caso de erro, executa rollback e lanca DatabaseError.
+    Devolve o lastrowid (ID do registo inserido).
+
+--- PooledDatabaseManager ---
+
+  Versao com pool de conexoes. Interface publica identica a
+  DatabaseManager, mas internamente usa MySQLConnectionPool.
+  Cada chamada a executar_query / executar_update pede uma conexao
+  ao pool, executa o SQL e devolve-a imediatamente ao pool.
+  Usado pelo ecra de Login para maior eficiencia em acessos concorrentes.
+
+  conectar() -> bool
+    Cria o pool de conexoes (nao abre uma ligacao individual).
+
+  desconectar()
+    Remove a referencia ao pool; o garbage collector liberta os recursos.
+
+NOTA DE SEGURANCA:
+  Nunca construir queries com f-strings ou concatenacao de strings com
+  dados do utilizador. Usar SEMPRE os marcadores %s com o parametro
+  "params" para evitar SQL Injection.
+
+
+========================================================================
+4. EXCECAO PERSONALIZADA — src/exceptions.py
+========================================================================
+
+  class DatabaseError(Exception)
+    Excecao unica para todos os erros de base de dados.
+    Permite que os repositorios e o DatabaseManager comuniquem falhas
+    sem depender de tkinter.messagebox.
+    A camada de UI captura esta excecao e decide como apresentar o erro
+    (notificacao, log, etc.).
+
+    Uso tipico:
+      # Na camada de dados
+      raise DatabaseError(f"Erro: {e}")
+
+      # Na camada de UI
+      try:
+          self.db.executar_query(...)
+      except DatabaseError as e:
+          self.notify.error(str(e))
+
+
+========================================================================
+5. MODELOS DE DADOS — src/models/
+========================================================================
+
+Os modelos sao classes Python simples (sem ORM) que representam as
+entidades da base de dados.
+
+--- Cliente (src/models/cliente.py) ---
+
+  Atributos: id_cliente, nome, email, telefone, password,
+             is_admin (bool), data_criacao
+
+  from_dict(data) [classmethod]
+    Cria um Cliente a partir do dicionario devolvido pelo cursor da BD.
+    Mapeamento directo entre colunas SQL e atributos Python.
+
+  to_dict() -> dict
+    Serializa o cliente para dicionario, excluindo a password por
+    razoes de seguranca.
+
+--- Produto (src/models/produto.py) ---
+
+  Atributos: id_produto, id_categoria, nome, descricao, preco (float),
+             stock, data_criacao, nome_categoria
+
+  Nota: nome_categoria e um campo calculado obtido via LEFT JOIN com a
+  tabela categorias — nao existe fisicamente na tabela produtos.
+
+  from_dict(data) [classmethod]
+    Converte o campo "preco" de Decimal (MariaDB) para float Python,
+    evitando erros de comparacao de tipos. Tambem mapeia id_categoria
+    e nome_categoria a partir do resultado do JOIN.
+
+--- Categoria (src/models/categoria.py) ---
+
+  Atributos: id_categoria, nome, descricao, data_criacao
+
+  from_dict(data) [classmethod]
+    Cria uma Categoria a partir do dicionario devolvido pelo cursor da BD.
+
+  to_dict() -> dict
+    Serializa a categoria para dicionario.
+
+--- Cupao (src/models/cupao.py) ---
+
+  Atributos: id_cupao, codigo, desconto (float), tipo
+             ("percentagem" | "fixo"), ativo (bool), data_validade,
+             data_criacao
+
+  esta_valido() -> bool
+    Devolve True se o cupao esta activo E dentro da data de validade.
+    Usado antes de calcular descontos.
+
+  calcular_desconto(subtotal) -> float
+    Aplica o desconto ao subtotal passado.
+    Se tipo=="percentagem": devolve subtotal * desconto / 100
+    Se tipo=="fixo": devolve o valor fixo (limitado ao subtotal).
+
+  from_dict(data) [classmethod]
+    Constroi o objecto a partir da linha da BD.
+
+
+========================================================================
+6. REPOSITORIOS — src/repositories/
+========================================================================
+
+Seguem o padrao Repository: encapsulam todo o SQL de uma entidade.
+A UI e os servicos NUNCA escrevem SQL directamente — usam repositorios.
+
+--- ProdutoRepository ---
+
+  Usa a constante interna _SELECT_PRODUTOS para todas as consultas:
+    SELECT p.*, c.nome AS nome_categoria
+    FROM produtos p
+    LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+  Isto garante que nome_categoria esta sempre disponivel nos objectos
+  Produto devolvidos.
+
+  listar_todos() -> list[Produto]
+    _SELECT_PRODUTOS ORDER BY c.nome, p.nome
+    Devolve todos os produtos ordenados por categoria e depois por nome.
+
+  listar_por_categoria(id_categoria) -> list[Produto]
+    _SELECT_PRODUTOS WHERE p.id_categoria = %s ORDER BY p.nome
+    Filtra produtos de uma categoria especifica.
+
+  buscar_por_id(id_produto) -> Produto | None
+    SELECT por chave primaria. Devolve None se nao encontrado.
+
+  buscar_por_nome(nome) -> list[Produto]
+    SELECT com LIKE %nome% para pesquisa parcial.
+
+  criar(produto) -> Produto
+    INSERT INTO produtos (id_categoria, nome, descricao, preco, stock).
+    Preenche id_produto no objecto devolvido.
+
+  atualizar(produto) -> None
+    UPDATE id_categoria, nome, descricao, preco, stock por id_produto.
+
+  deletar(id_produto) -> None
+    DELETE por id_produto.
+
+  atualizar_stock(id_produto, quantidade) -> None
+    UPDATE stock = stock + quantidade (pode ser negativo para decrementar).
+
+--- CategoriaRepository ---
+
+  listar_todos() -> list[Categoria]
+    SELECT * FROM categorias ORDER BY nome
+
+  buscar_por_id(id_categoria) -> Categoria | None
+    SELECT por chave primaria.
+
+  criar(categoria) -> Categoria
+    INSERT INTO categorias (nome, descricao). Preenche id_categoria.
+
+  atualizar(categoria) -> None
+    UPDATE nome, descricao por id_categoria.
+
+  deletar(id_categoria) -> None
+    DELETE por id_categoria. Os produtos associados ficam com
+    id_categoria = NULL (ON DELETE SET NULL na FK).
+
+  contar_produtos(id_categoria) -> int
+    SELECT COUNT(*) FROM produtos WHERE id_categoria = %s
+    Util para mostrar o numero de produtos antes de eliminar.
+
+--- ClienteRepository ---
+
+  listar_todos() -> list[Cliente]
+    SELECT id_cliente, nome, email, is_admin (sem password).
+
+  buscar_por_email(email) -> Cliente | None
+    Inclui o campo password — usado EXCLUSIVAMENTE no processo de login.
+    Nunca expor este metodo em listagens publicas.
+
+  buscar_por_id(id_cliente) -> Cliente | None
+    SELECT por chave primaria.
+
+  criar(cliente) -> Cliente
+    INSERT INTO clientes com password ja em formato hash bcrypt.
+
+  atualizar(cliente) -> None
+    UPDATE nome, email, telefone, is_admin.
+
+--- VendaRepository ---
+
+  criar_venda(cliente_id, itens) -> int
+    Operacao atomica:
+      1. INSERT INTO vendas (id_cliente, data, total)
+      2. Para cada item: INSERT INTO venda_produto (id_venda, id_produto,
+         preco, quantidade)
+      3. Para cada item: UPDATE produtos SET stock = stock - 1
+    Devolve id_venda. Se qualquer passo falhar, a transaccao e revertida.
+
+  historico_cliente(cliente_id) -> list[dict]
+    JOIN vendas + venda_produto + produtos para um cliente especifico.
+    Ordenado por data DESC.
+
+  historico_geral(limite=100) -> list[dict]
+    Historico de todas as vendas (admin). Limite configuravel.
+
+  total_vendas_periodo(data_inicio, data_fim) -> float
+    SUM(total) das vendas num intervalo de datas.
+
+--- CupaoRepository ---
+
+  listar_todos() -> list[Cupao]
+    SELECT * FROM cupoes ORDER BY id_cupao.
+
+  buscar_por_codigo(codigo) -> Cupao | None
+    SELECT por campo "codigo" (unico na BD).
+
+  validar_cupao(codigo) -> tuple[bool, Cupao | None, str]
+    1. Busca o cupao pelo codigo.
+    2. Verifica se esta activo e dentro da validade.
+    Devolve (True, cupao, "OK") ou (False, None, mensagem_erro).
+
+  criar(cupao) -> Cupao
+    INSERT INTO cupoes.
+
+  desativar(id_cupao) -> None
+    UPDATE cupoes SET ativo = FALSE.
+
+
+========================================================================
+7. SERVICOS — src/services/
+========================================================================
+
+--- StockService (src/services/stock_service.py) ---
+
+  __init__(db, limiar=STOCK_MINIMO)
+    Recebe o gestor de BD e o limiar de stock baixo.
+    Valida que o limiar nao e negativo.
+
+  produtos_stock_baixo() -> list[Produto]
+    SELECT produtos WHERE stock < limiar ORDER BY stock ASC.
+    Devolve lista de produtos em alerta.
+
+  resumo() -> str
+    Gera uma string formatada com os nomes dos produtos em alerta.
+    Usada para a notificacao do painel admin ao fazer login.
+
+  Usado em:
+    - LojaApp._verificar_alertas_stock() — alerta imediato apos login admin
+    - LojaApp._criar_aba_gerir_produtos() — painel visual na aba de produtos
+
+--- RelatorioService (src/services/relatorio_service.py) ---
+
+  gerar_relatorio_vendas(vendas, caminho) -> None
+    Gera PDF com historico de vendas usando a biblioteca fpdf2.
+    Inclui cabecalho com data/hora, tabela formatada com ID, cliente,
+    data, total, e rodape com total acumulado.
+
+  gerar_relatorio_stock(produtos, caminho) -> None
+    Gera PDF com inventario de produtos.
+    Produtos com stock baixo sao destacados com fundo laranja.
+
+  Ambos os metodos tentam usar a fonte DejaVuSans (suporte a Unicode)
+  se disponivel no sistema, caindo para a fonte padrao em caso contrario.
+
+  Usado em:
+    - LojaApp._exportar_pdf_vendas()
+    - LojaApp._exportar_pdf_stock()
+
+
+========================================================================
+8. UTILITARIOS — src/utils/
+========================================================================
+
+--- security.py ---
+
+  hash_password(password) -> str
+    Gera um hash seguro bcrypt com salt aleatorio (rounds=12).
+    Nunca armazenar passwords em texto claro na base de dados.
+    Usado no registo de novos clientes.
+
+  verify_password(password, password_hash) -> bool
+    Compara a password introduzida com o hash armazenado.
+    Devolve False de forma segura se o hash for None ou invalido
+    (nao lanca excecao).
+    Usado no processo de autenticacao do login.
+
+--- validators.py ---
+
+  validar_email(email) -> (bool, str)
+    Verifica formato com expressao regular (EMAIL_PATTERN do config.py).
+    Remove espacos nas extremidades antes de validar.
+
+  validar_password(password) -> (bool, str)
+    Verifica comprimento minimo (PASSWORD_MIN_LENGTH).
+
+  validar_preco(preco_str) -> (bool, float | None, str)
+    Converte string para float, aceita virgula ou ponto decimal.
+    Rejeita valores negativos.
+
+  validar_stock(stock_str) -> (bool, int | None, str)
+    Converte string para inteiro.
+    Rejeita valores negativos.
+
+  validar_nome_produto(nome) -> (bool, str)
+    Verifica campo nao vazio e comprimento maximo (PRODUTO_NOME_MAX_LENGTH).
+
+  Todos os validadores devolvem tuplos (valido, mensagem) para que a UI
+  possa mostrar a mensagem de erro especifica sem necessitar de saber a
+  logica de validacao.
+
+--- logger.py ---
+
+  obter_logger(nome_modulo) -> logging.Logger
+    Devolve um logger configurado para o modulo indicado.
+    Escreve simultaneamente para a consola e para o ficheiro
+    logs/app.log.
+    Usado em todos os modulos: logger = obter_logger(__name__)
+
+
+========================================================================
+9. INTERFACE GRAFICA — APLICACAO PRINCIPAL — src/ui/app.py
+========================================================================
+
+Classe: LojaApp
+
+  __init__(master)
+    Configura janela (titulo, tamanho, cor de fundo).
+    Aplica ModernStyle.configurar_temas() para estilos ttk.
+    Cria NotificationManager para mostrar mensagens ao utilizador.
+    Inicializa variaveis de estado: db, usuario_atual, carrinho,
+    cupao_ativo, notebook.
+    Chama mostrar_login() para exibir o ecra inicial.
+
+  mostrar_login() / mostrar_registo()
+    Instanciam LoginScreen / RegisterScreen e chamam .show().
+    Sao passados como callbacks para que os ecras possam navegar
+    entre si sem acoplamento directo.
+
+  on_login_success(usuario_cliente, db)
+    Callback chamado pelo LoginScreen apos autenticacao bem-sucedida.
+    Guarda o utilizador e a instancia de BD.
+    Decide qual interface criar: admin ou cliente, conforme is_admin.
+
+  criar_interface_cliente()
+    Cria o Notebook (ttk.Notebook) com 4 abas:
+      - "Explorar Produtos" -> _criar_aba_explorar_produtos()
+      - "Meu Carrinho"      -> _criar_aba_carrinho()
+      - "Wishlist"          -> _criar_aba_wishlist()
+      - "Avaliacoes"        -> _criar_aba_avaliacoes()
+
+  criar_interface_admin()
+    Cria o Notebook com 5 abas:
+      - "Gerir Produtos"    -> _criar_aba_gerir_produtos()
+      - "Gerir Clientes"    -> _criar_aba_gerir_clientes()
+      - "Ver Vendas"        -> _criar_aba_vendas()
+      - "Gerir Cupoes"      -> _criar_aba_gerir_cupoes()
+      - "Gerir Categorias"  -> _criar_aba_gerir_categorias()
+    Apos construir a interface, chama _verificar_alertas_stock().
+
+  limpar_janela()
+    Destroi todos os widgets da janela principal, preservando o
+    frame de notificacoes (evita que as notificacoes desaparecam
+    durante navegacao entre ecras).
+
+  fazer_logout()
+    Desconecta da BD, limpa todas as variaveis de sessao (usuario_atual,
+    carrinho, cupao_ativo, notebook, tree_carrinho, etc.) e chama
+    mostrar_login() para regressar ao ecra inicial.
+
+  --- Abas do Cliente ---
+
+  _criar_aba_explorar_produtos(parent)
+    Lista todos os produtos disponiveis (stock > 0) numa Treeview animada.
+    Colunas: Categoria, Nome, Avaliacao, Preco, Stock, Disponibilidade.
+    Filtro de categoria (Combobox) e pesquisa em tempo real (Entry) combinados.
+    Coluna Avaliacao mostra estrelas Unicode (ex: SSSS☆  4.2) calculadas
+    a partir de AVG(nota) da tabela avaliacoes.
+    Hover animation com tags odd/even/hover/low_stock.
+    Duplo-clique ou botao "Adicionar ao Carrinho" chama _adicionar_ao_carrinho().
+    Botao "Wishlist" permite guardar produto para compra futura.
+    Query: LEFT JOIN categorias para obter nome_categoria; AVG agrupado
+    por id_produto para calcular medias de avaliacao.
+
+  _adicionar_ao_carrinho(produto)
+    Verifica stock disponivel antes de adicionar.
+    Adiciona o produto a self.carrinho e chama _atualizar_aba_carrinho().
+
+  _criar_aba_carrinho(parent)
+    Treeview com os itens no carrinho (colunas: #, Produto, Preco).
+    Frame de resumo separado (subtotal, desconto, total).
+    Seccao de cupao com Entry + botoes "Aplicar" e "Remover".
+    Botoes: "Finalizar Compra" e "Limpar Carrinho".
+
+  _atualizar_aba_carrinho()
+    Actualiza a Treeview e o painel de resumo sempre que o carrinho
+    ou o cupao activo mudam.
+    Chamada apos adicionar produto, aplicar cupao, ou finalizar compra.
+
+  _criar_aba_wishlist(parent)
+    Lista os produtos guardados pelo cliente na tabela "wishlist".
+    Botoes "Mover para Carrinho" e "Remover da Wishlist".
+
+  _criar_aba_avaliacoes(parent)
+    Mostra apenas os produtos que o cliente efectivamente comprou
+    (via INNER JOIN na subquery de venda_produto + vendas).
+    Treeview superior: lista produtos com media global e nota do cliente.
+    Treeview inferior: reviews individuais do produto seleccionado.
+    O botao "Avaliar / Editar" so fica activo se o cliente tiver comprado
+    o produto seleccionado.
+    Query principal usa INNER JOIN subquery:
+      INNER JOIN (SELECT DISTINCT vp.id_produto FROM venda_produto vp
+                  JOIN vendas v ON v.id_venda = vp.id_venda
+                  WHERE v.id_cliente = %s) AS comprados
+      ON comprados.id_produto = p.id_produto
+
+  _dialog_avaliar_produto(id_produto, nome_produto, nota_atual, comentario_atual, callback)
+    Dialogo Toplevel com 5 radio buttons (1 a 5 estrelas) e campo
+    de comentario. Faz INSERT ou UPDATE na tabela "avaliacoes".
+
+  --- Abas do Administrador ---
+
+  _criar_aba_gerir_produtos(parent)
+    Treeview com todos os produtos (colunas: ID, Categoria, Nome, Preco, Stock, Estado).
+    Filtro de categoria (Combobox) e pesquisa por nome em tempo real.
+    Tag "low_stock" marca a laranja produtos com stock <= 3.
+    Painel de alerta visual para stock critico (em cima da tabela).
+    Botao "Novo Produto" abre dialogo com selector de categoria, nome,
+    descricao, preco e stock. Botao "Editar" reutiliza o mesmo dialogo.
+    Botoes "Eliminar", "Recarregar" e "Exportar PDF".
+
+  _criar_aba_gerir_categorias(parent)
+    Treeview com as categorias (colunas: ID, Nome, Descricao, N.Produtos).
+    Coluna N.Produtos conta quantos produtos estao associados a cada categoria
+    via CategoriaRepository.contar_produtos().
+    Botao "Nova Categoria" abre Toplevel com campos Nome e Descricao.
+    Botoes "Editar", "Eliminar" (avisa quantos produtos sao afectados) e "Recarregar".
+    Ao eliminar, os produtos associados ficam com id_categoria = NULL.
+
+  _criar_aba_gerir_clientes(parent)
+    Treeview com todos os clientes (colunas: ID, Nome, Email, Perfil).
+    Tag "admin" destaca os utilizadores administradores a azul.
+    Pesquisa por nome ou email. Botao "Recarregar".
+
+  _criar_aba_vendas(parent)
+    Treeview com historico de vendas (colunas: ID, Cliente, Data, Total).
+    JOIN vendas + clientes. Limite de 200 registos mais recentes.
+    Pesquisa por nome de cliente ou data. Botoes "Recarregar" e PDF.
+
+  _criar_aba_gerir_cupoes(parent)
+    Treeview com todos os cupoes (colunas: ID, Codigo, Desconto,
+    Tipo, Validade, Estado).
+    Tag "inativo" marca a vermelho os cupoes desactivados.
+    Botao "Novo Cupao" abre Toplevel com formulario.
+    Botao "Desactivar" pede o codigo e desactiva o cupao.
+
+  --- Exportacao de PDF ---
+
+  _exportar_pdf_vendas()
+    Pede ao utilizador um caminho de ficheiro (filedialog.asksaveasfilename).
+    Consulta historico de vendas na BD.
+    Chama RelatorioService.gerar_relatorio_vendas().
+
+  _exportar_pdf_stock()
+    Consulta todos os produtos na BD.
+    Chama RelatorioService.gerar_relatorio_stock().
+
+  _verificar_alertas_stock()
+    Usa StockService.resumo() para verificar stock baixo.
+    Se existirem alertas, mostra notificacao de aviso ao admin.
+
+
+========================================================================
+10. ECRAS DE LOGIN E REGISTO — src/ui/screens/
+========================================================================
+
+--- LoginScreen (src/ui/screens/login.py) ---
+
+  __init__(master, on_login_success, on_register_click, notify)
+    Cria instancia de PooledDatabaseManager para a autenticacao.
+    Recebe callbacks para navegacao.
+
+  show()
+    Limpa a janela e constroi o formulario de login.
+    Campos: Email (ModernEntry com placeholder) e Password.
+    Botao "Entrar" chama _fazer_login().
+    Link "Registe-se aqui" chama on_register_click.
+
+  _fazer_login() [metodo interno do show()]
+    1. Valida os campos com validar_email() e validar_password().
+    2. Chama ClienteRepository.buscar_por_email(email).
+    3. Chama verify_password(password, cliente.password).
+    4. Se autenticado: chama on_login_success(cliente, db).
+    5. Se falhar: mostra notificacao de erro sem revelar qual campo
+       esta errado (por seguranca).
+
+--- RegisterScreen (src/ui/screens/register.py) ---
+
+  show()
+    Formulario com campos: Nome, Email, Telefone, Password.
+    Botao "Criar Conta" chama _registar().
+
+  _registar() [metodo interno do show()]
+    1. Valida todos os campos.
+    2. Verifica que o email nao esta ja registado.
+    3. Chama hash_password(password) para proteger a password.
+    4. Chama ClienteRepository.criar(cliente).
+    5. Mostra notificacao de sucesso e navega para o login.
+
+
+========================================================================
+11. NOTIFICACOES — src/ui/notifications.py
+========================================================================
+
+Classe: NotificationManager
+
+  __init__(master)
+    Cria um frame fixo no topo da janela para exibir notificacoes.
+    Este frame e preservado durante toda a sessao (limpar_janela()
+    nunca o destroi).
+
+  success(mensagem) / error(mensagem) / warning(mensagem) / info(mensagem)
+    Mostram uma barra colorida no topo com a mensagem durante ~3 segundos.
+    Animacao de entrada (deslize para baixo em 150ms) e saida (150ms).
+
+  question(mensagem, titulo, callback)
+    Mostra um dialogo de confirmacao Sim/Nao.
+    Apos o utilizador responder, chama callback(True) ou callback(False).
+    Usado para operacoes criticas (finalizar compra, limpar carrinho, etc.).
+
+  _animar_entrada() / _animar_saida()
+    Animacoes de slide usando after() do Tkinter para agendar frames
+    a cada ~15ms, criando movimento suave sem bloquear a UI.
+
+
+========================================================================
+12. TEMA E WIDGETS — src/ui/theme.py, src/ui/components/widgets.py
+========================================================================
+
+--- ModernStyle (src/ui/theme.py) ---
+
+  configurar_temas() [classmethod]
+    Configura os estilos do ttk (TNotebook, TNotebook.Tab, TEntry,
+    TButton, Treeview, Scrollbar).
+    Chamado uma vez na inicializacao de LojaApp e LoginScreen.
+    Define a fonte, cores e dimensoes de todos os widgets ttk
+    de forma consistente em toda a aplicacao.
+
+--- Funcoes de botao (src/ui/theme.py) ---
+
+  criar_botao_primario(parent, texto, comando, **kwargs) -> tk.Button
+  criar_botao_secundario(parent, texto, comando, **kwargs) -> tk.Button
+  criar_botao_perigo(parent, texto, comando, **kwargs) -> tk.Button
+  criar_botao_sucesso(parent, texto, comando, **kwargs) -> tk.Button
+    Fabricas de botoes pre-configurados com a cor e hover correctos.
+    Evitam repeticao de codigo ao criar botoes.
+
+--- criar_header_executivo (src/ui/components/widgets.py) ---
+
+  criar_header_executivo(parent, titulo, usuario, callback_logout)
+    Cria o cabecalho azul no topo da janela apos login.
+    Mostra o logo, titulo e email do utilizador.
+    Inclui botao "Sair" com hover que chama callback_logout.
+    Hover animation com Enter/Leave binds.
+
+--- criar_logo_minimalista (src/ui/components/widgets.py) ---
+
+  criar_logo_minimalista(parent)
+    Desenha o logo da aplicacao num Canvas.
+    Inclui uma barra decorativa de cor primaria na base do canvas.
+
+--- criar_card_info (src/ui/components/widgets.py) ---
+
+  criar_card_info(parent, titulo, valor, icone, cor)
+    Cria um card com barra de acento azul de 4px no lado esquerdo,
+    icone, titulo e valor.
+    Usado nos paineis de estatisticas.
+
+
+========================================================================
+13. FLUXO COMPLETO DE UMA INTERACAO TIPICA
+========================================================================
+
+FLUXO 1: Login de cliente e adicao de produto ao carrinho
+----------------------------------------------------------
+ 1. main() cria tk.Tk() e LojaApp(root).
+ 2. LojaApp.__init__() chama mostrar_login().
+ 3. LoginScreen.show() renderiza o formulario.
+ 4. Utilizador preenche email + password e clica "Entrar".
+ 5. _fazer_login():
+      a. validar_email() e validar_password() validam os campos.
+      b. PooledDatabaseManager.executar_query(
+             "SELECT ... FROM clientes WHERE email = %s", (email,))
+      c. verify_password(password, cliente.password) compara hash bcrypt.
+      d. Se OK: on_login_success(cliente, db) -> LojaApp.on_login_success().
+ 6. LojaApp.on_login_success() chama criar_interface_cliente().
+ 7. Treeview da aba "Explorar Produtos" e populada com:
+      db.executar_query("SELECT * FROM produtos WHERE stock > 0")
+ 8. Utilizador faz duplo-clique num produto.
+ 9. _adicionar_ao_carrinho(produto) adiciona a self.carrinho.
+10. _atualizar_aba_carrinho() reflecte o item na Treeview do carrinho.
+
+FLUXO 2: Finalizacao de compra com cupao
+-----------------------------------------
+ 1. Utilizador escreve codigo do cupao e clica "Aplicar".
+ 2. CupaoRepository.validar_cupao(codigo):
+      a. buscar_por_codigo() faz SELECT FROM cupoes WHERE codigo = %s.
+      b. cupao.esta_valido() verifica ativo e data_validade.
+      c. Devolve (True, cupao, "OK") ou (False, None, mensagem).
+ 3. Se valido: self.cupao_ativo = cupao; _atualizar_aba_carrinho().
+ 4. Utilizador clica "Finalizar Compra".
+ 5. NotificationManager.question() pede confirmacao.
+ 6. Se confirmado:
+      a. INSERT INTO vendas (id_cliente, data, total) -> id_venda.
+      b. Para cada item: INSERT INTO venda_produto (...).
+      c. Para cada item: UPDATE produtos SET stock = stock - 1.
+      d. self.carrinho = []; self.cupao_ativo = None.
+      e. Notificacao de sucesso com ID da venda e total pago.
+
+FLUXO 3: Admin cria novo produto
+----------------------------------
+ 1. Admin faz login -> criar_interface_admin().
+ 2. _verificar_alertas_stock() mostra alerta se necessario.
+ 3. Admin clica "Novo Produto" na aba Gerir Produtos.
+ 4. Toplevel novo_produto() abre formulario (Nome, Preco, Stock).
+ 5. validar_nome_produto(), validar_preco(), validar_stock() validam.
+ 6. Se valido:
+      db.executar_update(
+          "INSERT INTO produtos (nome, preco, stock) VALUES (%s,%s,%s)",
+          (nome, preco, stock)
+      )
+ 7. _criar_aba_gerir_produtos(parent) e chamado para recarregar a tabela.
+
+   NOTA: o formulario de produto inclui agora um Combobox de categorias.
+   id_categoria e resolvido pelo nome seleccionado antes do INSERT/UPDATE:
+     id_cat = next((c.id_categoria for c in cats if c.nome == cat_nome_sel), None)
+     db.executar_update(
+         "INSERT INTO produtos (id_categoria, nome, descricao, preco, stock)"
+         " VALUES (%s, %s, %s, %s, %s)",
+         (id_cat, nome, descricao, preco, stock)
+     )
+
+========================================================================
+FIM DO DOCUMENTO
+========================================================================

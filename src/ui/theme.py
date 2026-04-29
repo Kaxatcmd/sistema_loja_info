@@ -92,7 +92,12 @@ class ModernStyle:
         style.configure('TEntry', font=FONTS['normal'], fieldbackground=bg_sec,
                        background=bg_sec, foreground=text_primary, borderwidth=1,
                        relief='solid', padding=8)
-        
+        style.map('TEntry',
+                 fieldbackground=[('focus', '#eff6ff')],
+                 bordercolor=[('focus', primary)],
+                 lightcolor=[('focus', primary)],
+                 darkcolor=[('focus', primary_light)])
+
         # === LABELFRAMES ===
         style.configure('TLabelframe', background=bg, foreground=text_primary,
                        font=FONTS['large'], borderwidth=1, relief='solid')
@@ -101,10 +106,12 @@ class ModernStyle:
         
         # === NOTEBOOK (ABAS) ===
         style.configure('TNotebook', background=bg, borderwidth=1)
-        style.configure('TNotebook.Tab', font=FONTS['normal'], padding=12)
+        style.configure('TNotebook.Tab', font=FONTS['normal'], padding=[14, 8])
         style.map('TNotebook.Tab',
                  background=[('selected', bg_sec), ('active', '#f0f4f8')],
-                 foreground=[('selected', primary), ('active', text_secondary)])
+                 foreground=[('selected', primary), ('active', text_secondary)],
+                 font=[('selected', FONTS['large'])],
+                 bordercolor=[('selected', primary)])
         
         # === TREEVIEW ===
         style.configure('Treeview', font=FONTS['normal'], background=bg_sec,
