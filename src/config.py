@@ -94,9 +94,9 @@ COLORS = {
 }
 
 # Validação
-PASSWORD_MIN_LENGTH = 6 # Reforçar a segurança para 8 >> 6 para facilitar testes 
+PASSWORD_MIN_LENGTH = 8 # Reforçar a segurança para 8 >> 6 para facilitar testes 
 EMAIL_PATTERN = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
 PRODUTO_NOME_MAX_LENGTH = 100
-NAX_LOGGIN_ATTEMPTS = 5
-lOGGING_LOCKOUT_DURATION = 5  # minutos
-SESSION_TIMOUT_DURATION = 30  # minutos
+MAX_LOGGIN_ATTEMPTS = 5
+LOGGING_LOCKOUT_SECONDS = 300  # 5 minutos
+SESSION_TIMEOUT_SECONDS = 1800  # 30 minutos

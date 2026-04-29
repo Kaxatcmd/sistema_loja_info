@@ -18,7 +18,7 @@ logger = obter_logger(__name__)
 class LoginScreen:
     """Tela de autenticação do utilizador com design moderno"""
     
-    def __init__(self, master, on_login_success, on_register_click, notify):
+    def __init__(self, master, on_login_success, on_register_click, notify, guard):
         """
         Inicializa tela de login
         
@@ -27,12 +27,14 @@ class LoginScreen:
             on_login_success: Callback quando login bem-sucedido
             on_register_click: Callback quando clicar em "Registe-se aqui"
             notify: NotificationManager do LojaApp
+            guard: LoginGuard partilhado — persiste entre recriações do ecrã
         """
         self.master = master
         self.on_login_success = on_login_success
         self.on_register_click = on_register_click
         self.db = PooledDatabaseManager()
         self.notify = notify
+        self.guard = guard
         ModernStyle.configurar_temas()
     
     def show(self):
@@ -118,6 +120,15 @@ class LoginScreen:
                 self.notify.warning("Por favor, preencha todos os campos!")
                 return
 
+            # Verificar bloqueio por brute-force
+            if self.guard.esta_bloqueado(email):
+                segundos = self.guard.segundos_restantes(email)
+                self.notify.error(
+                    f"Conta bloqueada temporariamente.\n"
+                    f"Tente novamente em {segundos}s."
+                )
+                return
+
             try:
                 self.db.conectar()
 
@@ -136,11 +147,22 @@ class LoginScreen:
                     logger.warning(
                         "Login falhado — palavra-passe incorreta para: %s", email
                     )
-                    self.notify.error("Palavra-passe incorreta!")
+                    self.guard.registar_falha(email)
+                    tentativas = self.guard.tentativas_restantes(email)
+                    if tentativas > 0:
+                        self.notify.error(
+                            f"Palavra-passe incorreta! "
+                            f"({tentativas} tentativa(s) restante(s))"
+                        )
+                    else:
+                        self.notify.error(
+                            "Conta bloqueada temporariamente por excesso de tentativas."
+                        )
                     self.db.desconectar()
                     return
 
-                # Login bem-sucedido — a conexão fica aberta para a sessão
+                # Login bem-sucedido — resetar falhas e manter conexão aberta
+                self.guard.resetar(email)
                 logger.info(
                     "Login bem-sucedido: %s (admin=%s)",
                     cliente.email,

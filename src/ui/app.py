@@ -20,6 +20,8 @@ from src.repositories.categoria_repository import CategoriaRepository
 from src.services.stock_service import StockService
 from src.services.relatorio_service import RelatorioService
 from src.utils.validators import validar_nome_produto, validar_preco, validar_stock
+from src.utils.session_manager import SessionManager
+from src.utils.login_guard import LoginGuard
 from src.ui.screens.login import LoginScreen
 from src.ui.screens.register import RegisterScreen
 from src.ui.theme import (ModernStyle, criar_botao_primario, criar_botao_secundario,
@@ -56,13 +58,15 @@ class LojaApp:
         self.notebook = None
         self.text_carrinho = None
         self.label_cupao_status = None
+        self.session: SessionManager | None = None
+        self.guard = LoginGuard()
         
         # Mostrar login
         self.mostrar_login()
     
     def mostrar_login(self):
         """Exibe tela de login"""
-        login = LoginScreen(self.master, self.on_login_success, self.mostrar_registo, self.notify)
+        login = LoginScreen(self.master, self.on_login_success, self.mostrar_registo, self.notify, self.guard)
         login.show()
     
     def mostrar_registo(self):
@@ -85,6 +89,13 @@ class LojaApp:
         """
         self.usuario_atual = usuario_cliente
         self.db = db
+
+        # Iniciar o gestor de sessão com expiração por inatividade
+        self.session = SessionManager(self.master, on_expire=self._sessao_expirada)
+        self.session.iniciar()
+        self.master.bind_all("<Motion>", self.session.registar_atividade)
+        self.master.bind_all("<Key>",    self.session.registar_atividade)
+        self.master.bind_all("<Button>", self.session.registar_atividade)
 
         logger.info(
             "Sessão iniciada: %s (admin=%s)",
@@ -2321,8 +2332,30 @@ class LojaApp:
     # Logout
     # ------------------------------------------------------------------
 
+    def _sessao_expirada(self):
+        """
+        Callback invocado automaticamente pelo SessionManager
+        quando o utilizador está inativo durante SESSION_TIMEOUT_SECONDS segundos.
+
+        Notifica o utilizador e realiza o logout de forma segura.
+        """
+        logger.warning(
+            "Sessão expirada por inatividade — utilizador: %s",
+            self.usuario_atual.email if self.usuario_atual else "desconhecido",
+        )
+        self.notify.warning(
+            "⏱️  A sua sessão expirou por inatividade.\n"
+            "Por favor, faça login novamente."
+        )
+        self.fazer_logout()
+
     def fazer_logout(self):
         """Realiza logout do utilizador"""
+        # Terminar o temporizador de sessão antes de limpar o estado
+        if self.session is not None:
+            self.session.parar()
+            self.session = None
+
         if self.usuario_atual:
             logger.info("Logout: %s", self.usuario_atual.email)
 

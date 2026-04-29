@@ -24,7 +24,7 @@ Utilização::
 """
 
 import time
-from src.config import MAX_LOGIN_ATTEMPTS, LOGIN_LOCKOUT_SECONDS
+from src.config import MAX_LOGGIN_ATTEMPTS as MAX_LOGIN_ATTEMPTS, LOGGING_LOCKOUT_SECONDS as LOGIN_LOCKOUT_SECONDS
 from src.utils.logger import obter_logger
 
 logger = obter_logger(__name__)
